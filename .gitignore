@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+*.csv
+*.db
+*.log
+venv/
+.venv/
+access_token.txt
+trades.json
+nohup.out
