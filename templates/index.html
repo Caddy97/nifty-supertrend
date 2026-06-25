@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NIFTY 50 - Supertrend</title>
+    <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0f1117; color: #e2e8f0; font-family: Segoe UI, sans-serif; }
+        .header { padding: 10px 20px; background: #161b27; border-bottom: 1px solid #2d3748; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+        .header h1 { font-size: 18px; color: #f7c948; }
+        .price { font-size: 22px; font-weight: bold; color: #4ade80; }
+        .intervals { display: flex; gap: 6px; }
+        .btn { padding: 5px 12px; border-radius: 5px; border: 1px solid #2d3748; background: #1e2535; color: #e2e8f0; cursor: pointer; font-size: 12px; }
+        .btn.active { background: #f7c948; color: #0f1117; font-weight: bold; border-color: #f7c948; }
+        .btn:hover { background: #2d3748; }
+        .reset-btn { padding: 5px 12px; border-radius: 5px; border: 1px solid #2d3748; background: #1e2535; color: #e2e8f0; cursor: pointer; font-size: 13px; }
+        .reset-btn:hover { background: #2d3748; }
+        #chart { width: 100%; height: calc(100vh - 60px - 110px); }
+        .positions-panel { background: #161b27; border-top: 1px solid #2d3748; padding: 10px 20px; height: 110px; overflow-y: auto; }
+        .positions-panel table { width: 100%; border-collapse: collapse; }
+        .positions-panel th { text-align: left; font-size: 11px; color: #94a3b8; padding: 4px 8px; border-bottom: 1px solid #2d3748; }
+        .positions-panel td { font-size: 12px; padding: 6px 8px; }
+        .side-buy { color: #4ade80; font-weight: bold; }
+        .side-sell { color: #f87171; font-weight: bold; }
+        .pnl-profit { color: #4ade80; font-weight: bold; }
+        .pnl-loss { color: #f87171; font-weight: bold; }
+        .empty-row { color: #64748b; text-align: center; padding: 16px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>NIFTY 50</h1>
+        <span class="price" id="live-price">Loading...</span>
+        <div class="intervals">
+            <button class="btn" onclick="changeInterval(event,'5minute')">5m</button>
+            <button class="btn active" onclick="changeInterval(event,'15minute')">15m</button>
+            <button class="btn" onclick="changeInterval(event,'60minute')">1hr</button>
+        </div>
+        <button class="reset-btn" onclick="resetView()">Reset view</button>
+    </div>
+    <div id="chart"></div>
+    <div class="positions-panel">
+        <table>
+            <thead>
+                <tr><th>Side</th><th>Entry Price</th><th>Entry Time</th><th>Current Price</th><th>Live P&L</th><th>Status</th></tr>
+            </thead>
+            <tbody id="positions-body">
+                <tr><td colspan="6" class="empty-row">No active position</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        let currentPrice = null;
+
+        const chart = LightweightCharts.createChart(document.getElementById("chart"), {
+            layout: { backgroundColor: "#0f1117", textColor: "#e2e8f0" },
+            grid: { vertLines: { color: "#1e2535" }, horzLines: { color: "#1e2535" } },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+            timeScale: { borderColor: "#2d3748", timeVisible: true },
+            width: document.getElementById("chart").clientWidth,
+            height: window.innerHeight - 60,
+        });
+
+        const candleSeries = chart.addCandlestickSeries({
+            upColor: "#4ade80", downColor: "#f87171",
+            borderUpColor: "#4ade80", borderDownColor: "#f87171",
+            wickUpColor: "#4ade80", wickDownColor: "#f87171",
+        });
+
+        const supertrendSeries = chart.addLineSeries({
+            color: "#a78bfa", lineWidth: 2, title: "Supertrend",
+        });
+
+        const socket = io();
+
+        function resetView() {
+            chart.timeScale().resetTimeScale();
+            chart.timeScale().scrollToRealTime();
+        }
+
+        function changeInterval(e, interval) {
+            document.querySelectorAll(".intervals .btn").forEach(b => b.classList.remove("active"));
+            e.target.classList.add("active");
+            currentIntervalSeconds = INTERVAL_SECONDS[interval] || 900;
+            socket.emit("change_interval", { interval: interval });
+        }
+
+        socket.on("historical_data", (data) => {
+            candleSeries.setData(data);
+            const stData = data.filter(d => d.supertrend !== null).map(d => ({ time: d.time, value: d.supertrend }));
+            supertrendSeries.setData(stData);
+
+            const markers = [];
+            data.forEach(d => {
+                if (d.signal === "BUY") {
+                    markers.push({ time: d.time, position: "belowBar", color: "#4ade80", shape: "arrowUp", text: "BUY" });
+                } else if (d.signal === "SELL") {
+                    markers.push({ time: d.time, position: "aboveBar", color: "#f87171", shape: "arrowDown", text: "SELL" });
+                }
+            });
+            candleSeries.setMarkers(markers);
+
+            const last = data[data.length - 1];
+            currentPrice = last.close;
+            lastCandle = { time: last.time, open: last.open, high: last.high, low: last.low, close: last.close };
+            document.getElementById("live-price").textContent = last.close.toLocaleString();
+
+            // Find the most recent signal and open a position from it
+            const signalCandles = data.filter(d => d.signal);
+            if (signalCandles.length > 0) {
+                const lastSignal = signalCandles[signalCandles.length - 1];
+                const t = new Date(lastSignal.time * 1000).toLocaleString();
+                openPosition(lastSignal.signal, lastSignal.close, t);
+            }
+            renderPosition();
+            resetView();
+        });
+
+        let lastCandle = null;
+        let activePosition = null;  // { side, entry, entryTime }
+        let currentIntervalSeconds = 900;  // 15min default, updated on interval change
+
+        const INTERVAL_SECONDS = { "5minute": 300, "15minute": 900, "60minute": 3600 };
+
+        function getCandleBucket(unixTime) {
+            return Math.floor(unixTime / currentIntervalSeconds) * currentIntervalSeconds;
+        }
+
+        function renderPosition() {
+            const body = document.getElementById("positions-body");
+            if (!activePosition) {
+                body.innerHTML = '<tr><td colspan="6" class="empty-row">No active position</td></tr>';
+                return;
+            }
+            const cur = currentPrice || activePosition.entry;
+            const pnl = activePosition.side === "BUY" ? (cur - activePosition.entry) : (activePosition.entry - cur);
+            const pnlClass = pnl >= 0 ? "pnl-profit" : "pnl-loss";
+            const sideClass = activePosition.side === "BUY" ? "side-buy" : "side-sell";
+            body.innerHTML = `<tr>
+                <td class="${sideClass}">${activePosition.side}</td>
+                <td>${activePosition.entry.toLocaleString()}</td>
+                <td>${activePosition.entryTime}</td>
+                <td>${cur.toLocaleString()}</td>
+                <td class="${pnlClass}">${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} pts</td>
+                <td>OPEN</td>
+            </tr>`;
+        }
+
+        function openPosition(side, price, time) {
+            activePosition = { side: side, entry: price, entryTime: time };
+            renderPosition();
+        }
+
+        socket.on("live_price", (data) => {
+            currentPrice = data.price;
+            document.getElementById("live-price").textContent = data.price.toLocaleString();
+
+            const nowSec = Math.floor(Date.now() / 1000);
+            const bucket = getCandleBucket(nowSec);
+
+            if (lastCandle && bucket > lastCandle.time) {
+                // New candle period started - open at previous close to avoid visual gaps
+                const openPrice = lastCandle.close;
+                lastCandle = { time: bucket, open: openPrice, high: Math.max(openPrice, data.price), low: Math.min(openPrice, data.price), close: data.price };
+                candleSeries.update(lastCandle);
+            } else if (lastCandle) {
+                lastCandle.close = data.price;
+                if (data.price > lastCandle.high) lastCandle.high = data.price;
+                if (data.price < lastCandle.low) lastCandle.low = data.price;
+                candleSeries.update(lastCandle);
+            }
+            renderPosition();
+        });
+
+        window.addEventListener("resize", () => {
+            chart.resize(document.getElementById("chart").clientWidth, window.innerHeight - 60);
+        });
+    </script>
+</body>
+</html>
