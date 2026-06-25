@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from auth import get_kite
 from data import get_historical_data
 from supertrend import calculate_supertrend
+from candle_reader import read_candles
 
 load_dotenv()
 API_KEY = os.getenv("KITE_API_KEY")
@@ -28,8 +29,16 @@ INTERVAL_DAYS = {
     "60minute": 90,
 }
 
+INTERVAL_NAME_MAP = {"5minute": "5m", "15minute": "15m", "60minute": "1h"}
+
 def build_chart_data(interval):
-    candles = get_historical_data(interval=interval, days=INTERVAL_DAYS.get(interval, 30))
+    name = INTERVAL_NAME_MAP.get(interval, "15m")
+    candles = read_candles(name, limit=500)
+    if not candles:
+        # fallback to Kite historical data if Parquet store is empty (e.g. fresh start)
+        candles = get_historical_data(interval=interval, days=INTERVAL_DAYS.get(interval, 30))
+        for cd in candles:
+            cd["time"] = int(cd["date"].timestamp())
     df = calculate_supertrend(candles)
     out = []
     for _, row in df.iterrows():
