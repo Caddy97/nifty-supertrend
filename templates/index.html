@@ -56,11 +56,40 @@
     <script>
         let currentPrice = null;
 
+        let lastTickDate = null;
+
+        function formatAxisTick(time) {
+            const d = new Date(time * 1000);
+            const dayStr = d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" });
+            // Show the date on the first tick of each day, time otherwise
+            const dateKey = d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata" });
+            if (dateKey !== lastTickDate) {
+                lastTickDate = dateKey;
+                return dayStr;
+            }
+            return d.toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+        }
+
+        function formatHoverTime(time) {
+            const d = new Date(time * 1000);
+            const dateStr = d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" });
+            const timeStr = d.toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+            return dateStr + " " + timeStr;
+        }
+
         const chart = LightweightCharts.createChart(document.getElementById("chart"), {
             layout: { backgroundColor: "#0f1117", textColor: "#e2e8f0" },
             grid: { vertLines: { color: "#1e2535" }, horzLines: { color: "#1e2535" } },
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-            timeScale: { borderColor: "#2d3748", timeVisible: true },
+            timeScale: {
+                borderColor: "#2d3748",
+                timeVisible: true,
+                secondsVisible: false,
+                tickMarkFormatter: (time) => formatAxisTick(time)
+            },
+            localization: {
+                timeFormatter: (time) => formatHoverTime(time)
+            },
             width: document.getElementById("chart").clientWidth,
             height: window.innerHeight - 60,
         });
