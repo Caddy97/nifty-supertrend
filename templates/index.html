@@ -115,6 +115,7 @@
             document.querySelectorAll(".intervals .btn").forEach(b => b.classList.remove("active"));
             e.target.classList.add("active");
             currentIntervalSeconds = INTERVAL_SECONDS[interval] || 900;
+            currentIntervalName = interval;
             socket.emit("change_interval", { interval: interval });
         }
 
@@ -152,6 +153,7 @@
         let lastCandle = null;
         let activePosition = null;  // { side, entry, entryTime }
         let currentIntervalSeconds = 900;  // 15min default, updated on interval change
+        let currentIntervalName = "15minute";
 
         const INTERVAL_SECONDS = { "5minute": 300, "15minute": 900, "60minute": 3600 };
 
@@ -184,27 +186,18 @@
             renderPosition();
         }
 
+
         socket.on("live_price", (data) => {
             currentPrice = data.price;
             document.getElementById("live-price").textContent = data.price.toLocaleString();
-
-            const nowSec = Math.floor(Date.now() / 1000);
-            const bucket = getCandleBucket(nowSec);
-
-            if (lastCandle && bucket > lastCandle.time) {
-                // New candle period started - open at previous close to avoid visual gaps
-                const openPrice = lastCandle.close;
-                lastCandle = { time: bucket, open: openPrice, high: Math.max(openPrice, data.price), low: Math.min(openPrice, data.price), close: data.price };
-                candleSeries.update(lastCandle);
-            } else if (lastCandle) {
-                lastCandle.close = data.price;
-                if (data.price > lastCandle.high) lastCandle.high = data.price;
-                if (data.price < lastCandle.low) lastCandle.low = data.price;
-                candleSeries.update(lastCandle);
-            }
             renderPosition();
         });
 
+        // Backend (candle_store.py) owns candle-building now.
+        // Periodically re-fetch confirmed candles instead of reconstructing them client-side.
+        setInterval(() => {
+            socket.emit("change_interval", { interval: currentIntervalName || "15minute" });
+        }, 30000);
         window.addEventListener("resize", () => {
             chart.resize(document.getElementById("chart").clientWidth, window.innerHeight - 60);
         });
