@@ -3,6 +3,7 @@ import time
 import pandas as pd
 from kiteconnect import KiteTicker
 from auth import get_kite
+from market_calendar import is_market_open, market_status
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -56,7 +57,7 @@ def start():
                         on_tick(t["last_price"], ts)
 
             def on_connect(ws, response):
-                print("Candle accumulator connected to Kite.")
+                print(f"Candle accumulator connected to Kite. Market status: {market_status()}")
                 ws.subscribe([NIFTY_TOKEN])
                 ws.set_mode(ws.MODE_FULL, [NIFTY_TOKEN])
 

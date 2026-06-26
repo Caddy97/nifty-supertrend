@@ -34,6 +34,7 @@
     <div class="header">
         <h1>NIFTY 50</h1>
         <span class="price" id="live-price">Loading...</span>
+        <span id="market-status-badge" style="font-size: 11px; padding: 4px 10px; border-radius: 12px; background: #2d3748; color: #94a3b8;">checking...</span>
         <div class="intervals">
             <button class="btn" onclick="changeInterval(event,'5minute')">5m</button>
             <button class="btn active" onclick="changeInterval(event,'15minute')">15m</button>
@@ -105,6 +106,19 @@
         });
 
         const socket = io();
+
+        function updateMarketStatus() {
+            fetch("/api/market_status")
+                .then(r => r.json())
+                .then(d => {
+                    const badge = document.getElementById("market-status-badge");
+                    badge.textContent = d.is_open ? "● MARKET OPEN" : "○ " + d.status.toUpperCase();
+                    badge.style.background = d.is_open ? "#14532d" : "#2d3748";
+                    badge.style.color = d.is_open ? "#4ade80" : "#94a3b8";
+                });
+        }
+        updateMarketStatus();
+        setInterval(updateMarketStatus, 60000);
 
         function resetView() {
             chart.timeScale().resetTimeScale();

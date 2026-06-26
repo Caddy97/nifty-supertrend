@@ -12,6 +12,7 @@ from auth import get_kite
 from data import get_historical_data
 from supertrend import calculate_supertrend
 from candle_reader import read_candles
+from market_calendar import is_market_open, market_status
 
 load_dotenv()
 API_KEY = os.getenv("KITE_API_KEY")
@@ -94,6 +95,10 @@ def start_ticker():
 @app.route("/")
 def index():
     return render_template("index.html")
+
+@app.route("/api/market_status")
+def api_market_status():
+    return {"status": market_status(), "is_open": is_market_open()}
 
 @socketio.on("connect")
 def handle_connect():
