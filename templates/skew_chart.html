@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Volatility Skew</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0f1117; color: #e2e8f0; font-family: Segoe UI, sans-serif; padding: 20px; }
+        h1 { color: #f7c948; font-size: 18px; margin-bottom: 16px; }
+        .controls { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; }
+        input, select { background: #1e2535; color: #e2e8f0; border: 1px solid #2d3748; padding: 6px 10px; border-radius: 5px; }
+        button { background: #f7c948; color: #0f1117; border: none; padding: 7px 18px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        #status { color: #94a3b8; font-size: 13px; margin: 10px 0; }
+        #chartContainer { background: #161b27; border-radius: 10px; padding: 20px; height: 500px; }
+    </style>
+</head>
+<body>
+    <h1>Implied Volatility vs Strike (Skew/Smile)</h1>
+    <div class="controls">
+        <label>Strikes: <input type="text" id="strikes" value="23500,23700,23900,24000,24100,24300,24500" size="40"></label>
+        <label>Type: <select id="opttype"><option value="CE">CE</option><option value="PE">PE</option></select></label>
+        <label>Days: <input type="number" id="days" value="10"></label>
+        <button onclick="loadSkew()">Analyze</button>
+    </div>
+    <div id="status">Click Analyze to load real implied volatility from Kite...</div>
+    <div id="chartContainer"><canvas id="skewChart"></canvas></div>
+
+    <script>
+        let chart = null;
+
+        function loadSkew() {
+            document.getElementById("status").textContent = "Fetching real option data and solving implied volatility... this may take a moment.";
+            const strikes = document.getElementById("strikes").value;
+            const type = document.getElementById("opttype").value;
+            const days = document.getElementById("days").value;
+
+            fetch(`/api/skew?strikes=${strikes}&type=${type}&days=${days}`)
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById("status").textContent = `Loaded ${data.length} data points across ${new Set(data.map(d => d.strike)).size} strikes.`;
+
+                    // Average implied vol per strike (across the sampled days)
+                    const byStrike = {};
+                    data.forEach(d => {
+                        if (!byStrike[d.strike]) byStrike[d.strike] = [];
+                        byStrike[d.strike].push(d.implied_vol_pct);
+                    });
+                    const strikesSorted = Object.keys(byStrike).map(Number).sort((a,b) => a-b);
+                    const avgIv = strikesSorted.map(s => {
+                        const vals = byStrike[s];
+                        return vals.reduce((a,b) => a+b, 0) / vals.length;
+                    });
+                    const flatVix = data.length ? data[0].flat_vix : 0;
+
+                    if (chart) chart.destroy();
+                    const ctx = document.getElementById("skewChart").getContext("2d");
+                    chart = new Chart(ctx, {
+                        type: "line",
+                        data: {
+                            labels: strikesSorted,
+                            datasets: [
+                                {
+                                    label: "Avg Implied Volatility (real market)",
+                                    data: avgIv,
+                                    borderColor: "#f87171",
+                                    backgroundColor: "rgba(248,113,113,0.2)",
+                                    tension: 0.3,
+                                    pointRadius: 5
+                                },
+                                {
+                                    label: "Flat VIX (what our model assumes)",
+                                    data: strikesSorted.map(() => flatVix),
+                                    borderColor: "#4ade80",
+                                    borderDash: [6,4],
+                                    pointRadius: 0
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            scales: {
+                                x: { title: { display: true, text: "Strike", color: "#e2e8f0" }, ticks: { color: "#e2e8f0" }, grid: { color: "#2d3748" } },
+                                y: { title: { display: true, text: "Implied Volatility %", color: "#e2e8f0" }, ticks: { color: "#e2e8f0" }, grid: { color: "#2d3748" } }
+                            },
+                            plugins: { legend: { labels: { color: "#e2e8f0" } } }
+                        }
+                    });
+                });
+        }
+    </script>
+</body>
+</html>

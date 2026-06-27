@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Black-Scholes vs Real Premium</title>
+    <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0f1117; color: #e2e8f0; font-family: Segoe UI, sans-serif; }
+        .header { padding: 12px 20px; background: #161b27; border-bottom: 1px solid #2d3748; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+        .header h1 { font-size: 16px; color: #f7c948; }
+        input, select { background: #1e2535; color: #e2e8f0; border: 1px solid #2d3748; padding: 5px 10px; border-radius: 5px; }
+        button { background: #f7c948; color: #0f1117; border: none; padding: 6px 16px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .legend { display: flex; gap: 16px; margin-left: auto; font-size: 12px; }
+        .legend-item { display: flex; align-items: center; gap: 6px; }
+        .swatch { width: 14px; height: 14px; border-radius: 3px; }
+        #chart { width: 100%; height: calc(100vh - 60px); }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>BS Estimate vs Real Premium</h1>
+        <label>Strike: <input type="number" id="strike" value="24000" step="50"></label>
+        <label>Type:
+            <select id="opttype">
+                <option value="CE">CE</option>
+                <option value="PE">PE</option>
+            </select>
+        </label>
+        <label>Days: <input type="number" id="days" value="30"></label>
+        <button onclick="loadData()">Load</button>
+        <div class="legend">
+            <div class="legend-item"><div class="swatch" style="background: rgba(200,255,170,0.6);"></div> Black-Scholes</div>
+            <div class="legend-item"><div class="swatch" style="background: rgba(155,100,100,0.6);"></div> Real (Kite)</div>
+        </div>
+    </div>
+    <div id="chart"></div>
+
+    <script>
+        const chart = LightweightCharts.createChart(document.getElementById("chart"), {
+            layout: { backgroundColor: "#0f1117", textColor: "#e2e8f0" },
+            grid: { vertLines: { color: "#1e2535" }, horzLines: { color: "#1e2535" } },
+            timeScale: { borderColor: "#2d3748", timeVisible: true },
+            width: document.getElementById("chart").clientWidth,
+            height: window.innerHeight - 60,
+        });
+
+        const bsSeries = chart.addCandlestickSeries({
+            upColor: "rgba(200,255,170,0.6)", downColor: "rgba(200,255,170,0.6)",
+            borderUpColor: "rgba(200,255,170,0.9)", borderDownColor: "rgba(200,255,170,0.9)",
+            wickUpColor: "rgba(200,255,170,0.6)", wickDownColor: "rgba(200,255,170,0.6)",
+        });
+
+        const realSeries = chart.addCandlestickSeries({
+            upColor: "rgba(155,100,100,0.6)", downColor: "rgba(155,100,100,0.6)",
+            borderUpColor: "rgba(155,100,100,0.9)", borderDownColor: "rgba(155,100,100,0.9)",
+            wickUpColor: "rgba(155,100,100,0.6)", wickDownColor: "rgba(155,100,100,0.6)",
+        });
+
+        function loadData() {
+            const strike = document.getElementById("strike").value;
+            const type = document.getElementById("opttype").value;
+            const days = document.getElementById("days").value;
+
+            fetch(`/api/compare?strike=${strike}&type=${type}&days=${days}`)
+                .then(r => r.json())
+                .then(data => {
+                    const bsData = data.map(d => ({ time: d.time, open: d.bs_open, high: d.bs_high, low: d.bs_low, close: d.bs_close }));
+                    const realData = data.map(d => ({ time: d.time, open: d.real_open, high: d.real_high, low: d.real_low, close: d.real_close }));
+                    bsSeries.setData(bsData);
+                    realSeries.setData(realData);
+                    chart.timeScale().fitContent();
+                });
+        }
+
+        loadData();
+        window.addEventListener("resize", () => {
+            chart.resize(document.getElementById("chart").clientWidth, window.innerHeight - 60);
+        });
+    </script>
+</body>
+</html>
