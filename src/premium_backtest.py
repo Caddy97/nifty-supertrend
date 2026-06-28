@@ -5,6 +5,8 @@ from supertrend import calculate_supertrend
 from strike_selector import get_atm_strike
 from black_scholes import black_scholes_price
 from vix_data import get_vix_history, get_vix_on_date
+from vol_skew import skewed_vol
+from trading_days import trading_days_between
 from contract_specs import LOT_SIZE
 
 NIFTY_TOKEN = 256265
@@ -105,9 +107,10 @@ def open_position(side, opt_type, spot, entry_date, vol):
         "entry_premium": premium
     }
 
-def price_option(position, spot, current_date, vol):
+def price_option(position, spot, current_date, vol_pct):
     days_to_expiry = (position["expiry"] - current_date).days
-    return black_scholes_price(spot, position["strike"], max(days_to_expiry, 0), vol, position["option_type"])
+    adjusted_vol = skewed_vol(vol_pct, spot, position["strike"], position["option_type"])
+    return black_scholes_price(spot, position["strike"], max(days_to_expiry, 0), adjusted_vol, position["option_type"])
 
 def make_trade_record(position, exit_premium, pnl, exit_date, exit_reason):
     return {

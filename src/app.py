@@ -55,26 +55,49 @@ def build_chart_data(interval):
         })
     return out
 
+active_option_token = None
+active_option_symbol = None
+ws_ref = None
+
+def set_active_option(token, symbol):
+    """Called when a new option position opens - swaps the live subscription."""
+    global active_option_token, active_option_symbol
+    if ws_ref and active_option_token and active_option_token != token:
+        try:
+            ws_ref.unsubscribe([active_option_token])
+        except Exception:
+            pass
+    active_option_token = token
+    active_option_symbol = symbol
+    if ws_ref and token:
+        ws_ref.subscribe([token])
+        ws_ref.set_mode(ws_ref.MODE_FULL, [token])
+        print(f"Now tracking live option: {symbol} (token {token})")
+
 def start_ticker():
+    global ws_ref
     kite = get_kite()
     access_token = kite.access_token
 
     while True:
         try:
             kws = KiteTicker(API_KEY, access_token)
+            ws_ref = kws
 
             def on_ticks(ws, ticks):
-                print(f"DEBUG: received {len(ticks)} tick(s)")
                 for t in ticks:
-                    print(f"DEBUG: token={t['instrument_token']} price={t['last_price']}")
                     if t["instrument_token"] == NIFTY_TOKEN:
-                        print(f"DEBUG: emitting live_price {t['last_price']}")
                         socketio.emit("live_price", {"price": t["last_price"]}, namespace="/")
+                    elif active_option_token and t["instrument_token"] == active_option_token:
+                        socketio.emit("live_option_price", {"price": t["last_price"], "symbol": active_option_symbol}, namespace="/")
 
             def on_connect(ws, response):
                 print("Kite ticker connected!")
                 ws.subscribe([NIFTY_TOKEN])
                 ws.set_mode(ws.MODE_FULL, [NIFTY_TOKEN])
+                if active_option_token:
+                    ws.subscribe([active_option_token])
+                    ws.set_mode(ws.MODE_FULL, [active_option_token])
 
             def on_close(ws, code, reason):
                 print(f"Ticker closed: {code} {reason}")
@@ -88,6 +111,7 @@ def start_ticker():
             kws.on_error = on_error
             kws.connect(threaded=False)
         except Exception as e:
+
             print(f"Ticker crashed: {e}")
         print("Reconnecting ticker in 5s...")
         time.sleep(5)
