@@ -46,10 +46,10 @@
     <div class="positions-panel">
         <table>
             <thead>
-                <tr><th>Side</th><th>Entry Price</th><th>Entry Time</th><th>Current Price</th><th>Live P&L</th><th>Status</th></tr>
+                <tr><th>Side</th><th>Entry Price</th><th>Entry Time</th><th>Current Price</th><th>Spot P&L</th><th>Option</th><th>Option Premium</th><th>Option P&L</th><th>Status</th></tr>
             </thead>
             <tbody id="positions-body">
-                <tr><td colspan="6" class="empty-row">No active position</td></tr>
+                <tr><td colspan="9" class="empty-row">No active position</td></tr>
             </tbody>
         </table>
     </div>
@@ -175,25 +175,53 @@
             return Math.floor(unixTime / currentIntervalSeconds) * currentIntervalSeconds;
         }
 
+        let optionSymbol = null;
+        let optionEntryPremium = null;
+        let optionCurrentPremium = null;
+
         function renderPosition() {
             const body = document.getElementById("positions-body");
             if (!activePosition) {
-                body.innerHTML = '<tr><td colspan="6" class="empty-row">No active position</td></tr>';
+                body.innerHTML = '<tr><td colspan="9" class="empty-row">No active position</td></tr>';
                 return;
             }
             const cur = currentPrice || activePosition.entry;
             const pnl = activePosition.side === "BUY" ? (cur - activePosition.entry) : (activePosition.entry - cur);
             const pnlClass = pnl >= 0 ? "pnl-profit" : "pnl-loss";
             const sideClass = activePosition.side === "BUY" ? "side-buy" : "side-sell";
+
+            let optPnlCell = "--";
+            let optPremCell = "--";
+            let optSymCell = optionSymbol || "--";
+            if (optionEntryPremium !== null && optionCurrentPremium !== null) {
+                const optPnl = optionCurrentPremium - optionEntryPremium;  // long option always: current - entry
+                const optClass = optPnl >= 0 ? "pnl-profit" : "pnl-loss";
+                optPnlCell = `<span class="${optClass}">${optPnl >= 0 ? "+" : ""}${optPnl.toFixed(2)} pts</span>`;
+                optPremCell = `${optionEntryPremium.toFixed(2)} -> ${optionCurrentPremium.toFixed(2)}`;
+            }
+
             body.innerHTML = `<tr>
                 <td class="${sideClass}">${activePosition.side}</td>
                 <td>${activePosition.entry.toLocaleString()}</td>
                 <td>${activePosition.entryTime}</td>
                 <td>${cur.toLocaleString()}</td>
                 <td class="${pnlClass}">${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} pts</td>
-                <td>OPEN</td>
+                <td>${optSymCell}</td>
+                <td>${optPremCell}</td>
+                <td>${optPnlCell}</td>
+                <td>OPEN (real premium)</td>
             </tr>`;
         }
+
+        socket.on("live_option_price", (data) => {
+            if (data.symbol !== optionSymbol) {
+                // new option contract started tracking - reset entry premium
+                optionSymbol = data.symbol;
+                optionEntryPremium = data.price;
+            }
+            optionCurrentPremium = data.price;
+            renderPosition();
+        });
 
         function openPosition(side, price, time) {
             activePosition = { side: side, entry: price, entryTime: time };

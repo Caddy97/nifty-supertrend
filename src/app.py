@@ -13,6 +13,8 @@ from data import get_historical_data
 from supertrend import calculate_supertrend
 from candle_reader import read_candles
 from market_calendar import is_market_open, market_status
+from strike_selector import get_atm_strike
+from option_lookup import get_monthly_option_token
 
 load_dotenv()
 API_KEY = os.getenv("KITE_API_KEY")
@@ -32,19 +34,25 @@ INTERVAL_DAYS = {
 
 INTERVAL_NAME_MAP = {"5minute": "5m", "15minute": "15m", "60minute": "1h"}
 
+INTERVAL_SECONDS = {"5minute": 300, "15minute": 900, "60minute": 3600}
+
+last_acted_signal = {"time": None}
+
 def build_chart_data(interval):
     name = INTERVAL_NAME_MAP.get(interval, "15m")
     candles = read_candles(name, limit=500)
     if not candles:
-        # fallback to Kite historical data if Parquet store is empty (e.g. fresh start)
         candles = get_historical_data(interval=interval, days=INTERVAL_DAYS.get(interval, 30))
         for cd in candles:
             cd["time"] = int(cd["date"].timestamp())
     df = calculate_supertrend(candles)
     out = []
     for _, row in df.iterrows():
+        # Parquet candles have "time" only; Kite-fallback candles have both "date" and "time".
+        # Always use "time" (already a unix int) - never rely on "date" being present.
+        row_time = int(row["time"])
         out.append({
-            "time": int(row["date"].timestamp()),
+            "time": row_time,
             "open": float(row["open"]),
             "high": float(row["high"]),
             "low": float(row["low"]),
@@ -53,6 +61,20 @@ def build_chart_data(interval):
             "direction": None if pd.isna(row["direction"]) else int(row["direction"]),
             "signal": row["signal"] if row["signal"] else None
         })
+
+    if out:
+        last = out[-1]
+        if last["signal"] and last["time"] != last_acted_signal["time"]:
+            side = last["signal"]
+            spot = last["close"]
+            strike = get_atm_strike(spot)
+            opt_type = "CE" if side == "BUY" else "PE"
+            info = get_monthly_option_token(strike, opt_type)
+            if info:
+                set_active_option(info["instrument_token"], info["tradingsymbol"])
+                last_acted_signal["time"] = last["time"]
+                print(f"New {side} signal -> tracking {info['tradingsymbol']}")
+
     return out
 
 active_option_token = None
@@ -124,11 +146,22 @@ def index():
 def api_market_status():
     return {"status": market_status(), "is_open": is_market_open()}
 
+_chart_cache = {}
+
+def refresh_chart_cache(interval):
+    import traceback
+    try:
+        _chart_cache[interval] = build_chart_data(interval)
+        print(f"Chart cache refreshed for {interval}: {len(_chart_cache[interval])} rows")
+    except Exception as e:
+        print(f"Failed to refresh chart cache for {interval}: {e}")
+        traceback.print_exc()
+
 @socketio.on("connect")
-def handle_connect():
+def handle_connect(auth=None):
     print("Client connected!")
-    data = build_chart_data(current_interval)
-    emit("historical_data", data)
+    refresh_chart_cache(current_interval)  # always get fresh data, never trust a stale cache
+    emit("historical_data", _chart_cache.get(current_interval, []))
 
 @socketio.on("change_interval")
 def handle_interval(payload):
@@ -138,8 +171,39 @@ def handle_interval(payload):
     data = build_chart_data(current_interval)
     emit("historical_data", data)
 
+def chart_refresh_loop():
+    """Wakes up at each candle boundary for the current interval and pushes fresh data to all clients."""
+    while True:
+        interval = current_interval
+        period = INTERVAL_SECONDS.get(interval, 900)
+        now = time.time()
+        # sleep until the next candle boundary + a small buffer for the candle to be written
+        next_boundary = (int(now / period) + 1) * period + 5
+        time.sleep(max(0, next_boundary - time.time()))
+
+        if not is_market_open():
+            continue
+
+        refresh_chart_cache(current_interval)
+        data = _chart_cache.get(current_interval, [])
+        if data:
+            socketio.emit("historical_data", data, namespace="/")
+            print(f"Auto-pushed chart refresh ({current_interval}): {len(data)} candles")
+
+
 if __name__ == "__main__":
+    print("Authenticating with Kite (one-time, before starting server)...")
+    get_kite()
+    print("Pre-warming chart cache before accepting connections...")
+    refresh_chart_cache(current_interval)
+    print("Cache ready. Starting ticker and server...")
+
     thread = threading.Thread(target=start_ticker)
     thread.daemon = True
     thread.start()
+
+    refresh_thread = threading.Thread(target=chart_refresh_loop)
+    refresh_thread.daemon = True
+    refresh_thread.start()
+
     socketio.run(app, debug=False, port=5001, allow_unsafe_werkzeug=True)

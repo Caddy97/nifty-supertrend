@@ -8,8 +8,15 @@ API_KEY = os.getenv("KITE_API_KEY")
 API_SECRET = os.getenv("KITE_API_SECRET")
 TOKEN_FILE = "access_token.txt"
 
+_kite_singleton = None
+
 def get_kite():
-    """Returns an authenticated KiteConnect object, using cached token if valid."""
+    """Returns an authenticated KiteConnect object. Logs in ONCE per process run;
+    all callers share the same session to avoid concurrent-login race conditions."""
+    global _kite_singleton
+    if _kite_singleton is not None:
+        return _kite_singleton
+
     kite = KiteConnect(api_key=API_KEY)
 
     if os.path.exists(TOKEN_FILE):
@@ -17,9 +24,9 @@ def get_kite():
             token = f.read().strip()
         kite.set_access_token(token)
         try:
-            # quick check: if this fails, token is expired/invalid
             kite.profile()
             print("Using cached access token - valid.")
+            _kite_singleton = kite
             return kite
         except Exception:
             print("Cached token expired or invalid. Need fresh login.")
@@ -45,6 +52,7 @@ def get_kite():
         f.write(access_token)
 
     print("\nLogin successful! Access token saved for today.")
+    _kite_singleton = kite
     return kite
 
 if __name__ == "__main__":
