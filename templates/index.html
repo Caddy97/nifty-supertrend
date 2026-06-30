@@ -78,6 +78,9 @@
             return dateStr + " " + timeStr;
         }
 
+        const HEADER_H = 60;
+        const POSITIONS_H = 110;
+
         const chart = LightweightCharts.createChart(document.getElementById("chart"), {
             layout: { backgroundColor: "#0f1117", textColor: "#e2e8f0" },
             grid: { vertLines: { color: "#1e2535" }, horzLines: { color: "#1e2535" } },
@@ -92,7 +95,7 @@
                 timeFormatter: (time) => formatHoverTime(time)
             },
             width: document.getElementById("chart").clientWidth,
-            height: window.innerHeight - 60,
+            height: window.innerHeight - HEADER_H - POSITIONS_H,
         });
 
         const candleSeries = chart.addCandlestickSeries({
@@ -130,10 +133,13 @@
             e.target.classList.add("active");
             currentIntervalSeconds = INTERVAL_SECONDS[interval] || 900;
             currentIntervalName = interval;
+            shouldResetView = true;
             socket.emit("change_interval", { interval: interval });
         }
 
         socket.on("historical_data", (data) => {
+            if (!data || data.length === 0) return;
+
             candleSeries.setData(data);
             const stData = data.filter(d => d.supertrend !== null).map(d => ({ time: d.time, value: d.supertrend }));
             supertrendSeries.setData(stData);
@@ -161,13 +167,18 @@
                 openPosition(lastSignal.signal, lastSignal.close, t);
             }
             renderPosition();
-            resetView();
+
+            if (shouldResetView) {
+                resetView();
+                shouldResetView = false;
+            }
         });
 
         let lastCandle = null;
         let activePosition = null;  // { side, entry, entryTime }
         let currentIntervalSeconds = 900;  // 15min default, updated on interval change
         let currentIntervalName = "15minute";
+        let shouldResetView = true;  // reset on first load and on explicit interval change
 
         const INTERVAL_SECONDS = { "5minute": 300, "15minute": 900, "60minute": 3600 };
 
@@ -235,13 +246,8 @@
             renderPosition();
         });
 
-        // Backend (candle_store.py) owns candle-building now.
-        // Periodically re-fetch confirmed candles instead of reconstructing them client-side.
-        setInterval(() => {
-            socket.emit("change_interval", { interval: currentIntervalName || "15minute" });
-        }, 30000);
         window.addEventListener("resize", () => {
-            chart.resize(document.getElementById("chart").clientWidth, window.innerHeight - 60);
+            chart.resize(document.getElementById("chart").clientWidth, window.innerHeight - HEADER_H - POSITIONS_H);
         });
     </script>
 </body>

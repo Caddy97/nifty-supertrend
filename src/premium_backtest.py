@@ -56,44 +56,68 @@ def get_monthly_expiry(trade_date):
 
 def run_premium_backtest(candles, vix_df):
     df = calculate_supertrend(candles)
-    signals_df = df[df["signal"].notna()].reset_index(drop=True)
 
     trades = []
     position = None
-    forced_closes = 0
+    exit_counts = {"signal": 0, "stop_loss": 0, "expiry": 0}
 
-    for _, row in signals_df.iterrows():
+    for _, row in df.iterrows():
         sig_date = row["date"]
-        if hasattr(sig_date, "tz_localize"):
-            sig_date_naive = sig_date.tz_localize(None) if sig_date.tzinfo else sig_date
-        else:
-            sig_date_naive = sig_date
+        if hasattr(sig_date, "tzinfo") and sig_date.tzinfo:
+            sig_date = sig_date.replace(tzinfo=None)
 
         spot = row["close"]
-        vix_pct = get_vix_on_date(vix_df, sig_date_naive)
+        vix_pct = get_vix_on_date(vix_df, sig_date)
         if vix_pct is None:
             continue
         vol = vix_pct / 100.0
 
+        # --- Check exit conditions on active position first ---
+        if position:
+            current_premium = price_option(position, spot, sig_date, vol)
+            days_to_expiry = (position["expiry"] - sig_date).days
+
+            if position["side"] == "LONG":
+                pnl = current_premium - position["entry_premium"]
+                # Exit 3: force close 1 day before expiry
+                if days_to_expiry <= 1:
+                    trades.append(make_trade_record(position, current_premium, pnl, sig_date, "expiry"))
+                    position = None
+                    exit_counts["expiry"] += 1
+
+            elif position["side"] == "SHORT":
+                pnl = position["entry_premium"] - current_premium
+                # Exit 3: force close 1 day before expiry
+                if days_to_expiry <= 1:
+                    trades.append(make_trade_record(position, current_premium, pnl, sig_date, "expiry"))
+                    position = None
+                    exit_counts["expiry"] += 1
+
+        # --- Exit 1: signal reversal + open new position ---
         if row["signal"] == "BUY":
             if position and position["side"] == "SHORT":
-                exit_premium = price_option(position, spot, sig_date_naive, vol)
+                exit_premium = price_option(position, spot, sig_date, vol)
                 pnl = position["entry_premium"] - exit_premium
-                trades.append(make_trade_record(position, exit_premium, pnl, sig_date_naive, "signal"))
+                trades.append(make_trade_record(position, exit_premium, pnl, sig_date, "signal"))
                 position = None
+                exit_counts["signal"] += 1
             if not position:
-                position = open_position("LONG", "CE", spot, sig_date_naive, vol)
+                position = open_position("LONG", "CE", spot, sig_date, vol)
 
         elif row["signal"] == "SELL":
             if position and position["side"] == "LONG":
-                exit_premium = price_option(position, spot, sig_date_naive, vol)
+                exit_premium = price_option(position, spot, sig_date, vol)
                 pnl = exit_premium - position["entry_premium"]
-                trades.append(make_trade_record(position, exit_premium, pnl, sig_date_naive, "signal"))
+                trades.append(make_trade_record(position, exit_premium, pnl, sig_date, "signal"))
                 position = None
+                exit_counts["signal"] += 1
             if not position:
-                position = open_position("SHORT", "PE", spot, sig_date_naive, vol)
+                position = open_position("SHORT", "PE", spot, sig_date, vol)
 
-    print(f"\nForced expiry closes (position held past monthly expiry): {forced_closes}")
+    print(f"\nExit breakdown:")
+    print(f"  Signal reversals : {exit_counts['signal']}")
+    print(f"  Stop losses (50%): {exit_counts['stop_loss']}")
+    print(f"  Expiry closes    : {exit_counts['expiry']}")
     return trades
 
 def open_position(side, opt_type, spot, entry_date, vol):
@@ -140,6 +164,13 @@ def print_results(trades):
         peak = max(peak, equity)
         max_dd_pts = max(max_dd_pts, peak - equity)
 
+    by_exit = {}
+    for t in trades:
+        r = t["exit_reason"]
+        by_exit.setdefault(r, {"count": 0, "pnl": 0})
+        by_exit[r]["count"] += 1
+        by_exit[r]["pnl"] += t["pnl_points"]
+
     print("\n" + "=" * 55)
     print("PREMIUM-BASED BACKTEST - NIFTY MONTHLY OPTIONS")
     print("(Black-Scholes estimate using real spot + real VIX)")
@@ -155,6 +186,9 @@ def print_results(trades):
     if losses:
         print(f"Avg loss (points):  {sum(t['pnl_points'] for t in losses)/len(losses):,.2f}")
     print(f"Max drawdown (pts): {max_dd_pts:,.2f}")
+    print(f"\nP&L by exit type:")
+    for reason, stats in sorted(by_exit.items()):
+        print(f"  {reason:<12}: {stats['count']:>4} trades  |  {stats['pnl']:>10,.2f} pts")
     print("=" * 55)
     print("\nNOTE: Premiums are Black-Scholes ESTIMATES (real VIX + real spot),")
     print("not actual traded option prices - Kite doesn't retain expired-contract history.")

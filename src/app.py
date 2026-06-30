@@ -15,6 +15,9 @@ from candle_reader import read_candles
 from market_calendar import is_market_open, market_status
 from strike_selector import get_atm_strike
 from option_lookup import get_monthly_option_token
+from black_scholes import black_scholes_price
+from vix_data import get_vix_history, get_vix_on_date
+from telegram_bot import send_signal_alert
 
 load_dotenv()
 API_KEY = os.getenv("KITE_API_KEY")
@@ -40,11 +43,23 @@ last_acted_signal = {"time": None}
 
 def build_chart_data(interval):
     name = INTERVAL_NAME_MAP.get(interval, "15m")
-    candles = read_candles(name, limit=500)
+
+    # Always fetch full history from Kite (covers the configured window)
+    kite_candles = get_historical_data(interval=interval, days=INTERVAL_DAYS.get(interval, 30))
+    merged = {}
+    for cd in kite_candles:
+        t = int(cd["date"].timestamp())
+        merged[t] = {"time": t, "open": cd["open"], "high": cd["high"], "low": cd["low"], "close": cd["close"]}
+
+    # Overlay with parquet-accumulated candles — captures the live-forming candle
+    # and any ticks not yet reflected in Kite's API response
+    for cd in read_candles(name, limit=500):
+        merged[cd["time"]] = cd
+
+    candles = sorted(merged.values(), key=lambda x: x["time"])
     if not candles:
-        candles = get_historical_data(interval=interval, days=INTERVAL_DAYS.get(interval, 30))
-        for cd in candles:
-            cd["time"] = int(cd["date"].timestamp())
+        return []
+
     df = calculate_supertrend(candles)
     out = []
     for _, row in df.iterrows():
@@ -74,6 +89,20 @@ def build_chart_data(interval):
                 set_active_option(info["instrument_token"], info["tradingsymbol"])
                 last_acted_signal["time"] = last["time"]
                 print(f"New {side} signal -> tracking {info['tradingsymbol']}")
+                try:
+                    vix_df = get_vix_history(period="5d")
+                    from datetime import datetime
+                    vix_pct = get_vix_on_date(vix_df, datetime.now())
+                    vol = (vix_pct / 100.0) if vix_pct else 0.15
+                    from contract_specs import LOT_SIZE
+                    from trading_days import trading_days_between
+                    from premium_backtest import get_monthly_expiry
+                    expiry = get_monthly_expiry(datetime.now())
+                    dte = (expiry - datetime.now()).days
+                    premium = black_scholes_price(spot, strike, max(dte, 0), vol, opt_type)
+                    send_signal_alert(side, spot, strike, opt_type, info["tradingsymbol"], premium)
+                except Exception as e:
+                    print(f"Telegram alert failed: {e}")
 
     return out
 
