@@ -235,6 +235,13 @@
                     <tbody id="pos-body">
                         <tr><td colspan="10" class="empty">No open positions</td></tr>
                     </tbody>
+                    <tfoot id="pos-total" style="display:none">
+                        <tr style="background:var(--hover);border-top:1px solid var(--border)">
+                            <td colspan="8" class="bold" style="text-align:right;padding-right:12px;color:var(--muted)">Total P&amp;L</td>
+                            <td id="pos-total-pts" class="bold"></td>
+                            <td id="pos-total-inr" class="bold"></td>
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
 
@@ -480,6 +487,7 @@
         if (!openTrades.length) {
             set("pos-body", '<tr><td colspan="10" class="empty">No open positions</td></tr>');
             document.getElementById("pos-badge").textContent = "";
+            document.getElementById("pos-total").style.display = "none";
             return;
         }
         let totalPnlInr = 0;
@@ -506,13 +514,16 @@
                 <td class="${c} bold">${pnlInr != null ? "₹" + fmtInr(pnlInr) : "--"}</td>
             </tr>`;
         });
+        set("pos-body", rows.join(""));
         const totalC = col(totalPnlInr);
-        const totalRow = `<tr style="border-top:1px solid var(--border);background:var(--hover)">
-            <td colspan="8" class="bold" style="text-align:right;padding-right:12px;color:var(--muted)">Total P&amp;L</td>
-            <td class="${totalC} bold">${fmtPts(totalPnlInr / LOT)}</td>
-            <td class="${totalC} bold">₹${fmtInr(totalPnlInr)}</td>
-        </tr>`;
-        set("pos-body", rows.join("") + totalRow);
+        const foot = document.getElementById("pos-total");
+        foot.style.display = "";
+        const ptEl = document.getElementById("pos-total-pts");
+        const inrEl = document.getElementById("pos-total-inr");
+        ptEl.className = totalC + " bold";
+        ptEl.textContent = fmtPts(totalPnlInr / LOT);
+        inrEl.className = totalC + " bold";
+        inrEl.textContent = "₹" + fmtInr(totalPnlInr);
         setBadge("pos-badge", totalPnlInr || null);
     }
 
