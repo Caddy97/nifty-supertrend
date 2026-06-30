@@ -211,28 +211,11 @@ def start_ticker():
         print("Reconnecting ticker in 5s...")
         time.sleep(5)
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    error = None
-    if request.method == "POST":
-        if request.form["username"] == DASHBOARD_USER and request.form["password"] == DASHBOARD_PASS:
-            session["logged_in"] = True
-            return redirect(url_for("index"))
-        error = "Invalid credentials"
-    return render_template("login.html", error=error)
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect(url_for("login"))
-
 @app.route("/")
-@login_required
 def index():
     return render_template("index.html")
 
 @app.route("/api/market_status")
-@login_required
 def api_market_status():
     return {"status": market_status(), "is_open": is_market_open()}
 
