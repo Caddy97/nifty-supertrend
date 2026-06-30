@@ -1,7 +1,8 @@
 import threading
 import time
 import pandas as pd
-from flask import Flask, render_template
+from flask import Flask, render_template, request, redirect, session, url_for
+from functools import wraps
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 from kiteconnect import KiteTicker
@@ -24,9 +25,21 @@ load_dotenv()
 API_KEY = os.getenv("KITE_API_KEY")
 NIFTY_TOKEN = 256265
 
+DASHBOARD_USER = os.getenv("DASHBOARD_USER", "vishal")
+DASHBOARD_PASS = os.getenv("DASHBOARD_PASS", "nifty2026")
+
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
+app.secret_key = os.getenv("SECRET_KEY", "nifty-supertrend-secret-2026")
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("logged_in"):
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated
 
 current_interval = "15minute"
 
@@ -198,11 +211,28 @@ def start_ticker():
         print("Reconnecting ticker in 5s...")
         time.sleep(5)
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        if request.form["username"] == DASHBOARD_USER and request.form["password"] == DASHBOARD_PASS:
+            session["logged_in"] = True
+            return redirect(url_for("index"))
+        error = "Invalid credentials"
+    return render_template("login.html", error=error)
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
 @app.route("/")
+@login_required
 def index():
     return render_template("index.html")
 
 @app.route("/api/market_status")
+@login_required
 def api_market_status():
     return {"status": market_status(), "is_open": is_market_open()}
 
