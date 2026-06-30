@@ -3,524 +3,526 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NIFTY 50 - Supertrend</title>
+    <title>NIFTY 50 — Supertrend</title>
     <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
+        :root {
+            --bg:        #131722;
+            --panel:     #1e222d;
+            --border:    #2a2e39;
+            --text:      #d1d4dc;
+            --muted:     #787b86;
+            --green:     #26a69a;
+            --red:       #ef5350;
+            --gold:      #f7c948;
+            --blue:      #2196f3;
+            --hover:     #2a2e39;
+            --header-h:  48px;
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: #0f1117; color: #e2e8f0; font-family: Segoe UI, sans-serif; overflow: hidden; }
+        body {
+            background: var(--bg); color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-size: 13px; overflow: hidden; height: 100vh;
+        }
 
-        /* ── Header ── */
-        .header {
-            height: 52px; padding: 0 20px; background: #161b27;
-            border-bottom: 1px solid #2d3748;
-            display: flex; align-items: center; gap: 16px;
+        /* ── Top bar ── */
+        #topbar {
+            height: var(--header-h); background: var(--panel);
+            border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; padding: 0 14px; gap: 0; flex-shrink: 0;
         }
-        .header h1 { font-size: 16px; color: #f7c948; font-weight: 700; }
-        .live-price { font-size: 22px; font-weight: 700; color: #4ade80; min-width: 100px; }
-        .price-change { font-size: 13px; color: #94a3b8; }
-        .badge {
-            font-size: 11px; padding: 3px 10px; border-radius: 12px;
-            background: #2d3748; color: #94a3b8;
+        .tb-symbol { font-size: 15px; font-weight: 700; color: var(--text); padding-right: 14px; border-right: 1px solid var(--border); margin-right: 14px; }
+        .tb-price  { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; margin-right: 8px; }
+        .tb-change { font-size: 12px; font-variant-numeric: tabular-nums; margin-right: 16px; }
+        .tb-ohlc   { display: flex; gap: 14px; margin-right: 16px; padding-right: 16px; border-right: 1px solid var(--border); }
+        .tb-ohlc span { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+        .tb-ohlc span b { color: var(--text); font-weight: 500; }
+        .tb-sep { width: 1px; height: 22px; background: var(--border); margin: 0 10px; }
+        .tb-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+        /* Interval pills */
+        .iv-group { display: flex; gap: 2px; }
+        .iv-btn {
+            padding: 3px 10px; border-radius: 3px; border: none;
+            background: transparent; color: var(--muted); cursor: pointer; font-size: 12px;
+            font-family: inherit;
         }
-        .intervals { display: flex; gap: 5px; margin-left: auto; }
-        .btn {
-            padding: 4px 11px; border-radius: 4px; border: 1px solid #2d3748;
-            background: #1e2535; color: #94a3b8; cursor: pointer; font-size: 12px;
+        .iv-btn:hover  { background: var(--hover); color: var(--text); }
+        .iv-btn.active { background: var(--gold); color: #131722; font-weight: 700; }
+
+        .icon-btn {
+            padding: 4px 10px; border-radius: 3px; border: 1px solid var(--border);
+            background: transparent; color: var(--muted); cursor: pointer; font-size: 12px;
+            font-family: inherit;
         }
-        .btn.active { background: #f7c948; color: #0f1117; font-weight: 700; border-color: #f7c948; }
-        .btn:hover:not(.active) { background: #2d3748; color: #e2e8f0; }
-        .reset-btn {
-            padding: 4px 11px; border-radius: 4px; border: 1px solid #2d3748;
-            background: transparent; color: #94a3b8; cursor: pointer; font-size: 12px;
+        .icon-btn:hover { background: var(--hover); color: var(--text); }
+
+        .mkt-badge {
+            font-size: 11px; padding: 3px 9px; border-radius: 10px;
+            background: var(--hover); color: var(--muted);
         }
-        .reset-btn:hover { background: #2d3748; color: #e2e8f0; }
 
         /* ── Chart ── */
-        #chart { width: 100%; }
+        #chart { width: 100%; flex-shrink: 0; }
+
+        /* ── Drag handle ── */
+        #drag-handle {
+            height: 4px; background: var(--border); cursor: row-resize; flex-shrink: 0;
+            transition: background 0.15s;
+        }
+        #drag-handle:hover { background: var(--gold); }
 
         /* ── Bottom panel ── */
-        .bottom-panel { background: #161b27; border-top: 1px solid #2d3748; display: flex; flex-direction: column; }
+        #bottom {
+            background: var(--panel); display: flex; flex-direction: column; flex-shrink: 0;
+            border-top: 1px solid var(--border);
+        }
 
         /* Tab bar */
-        .tab-bar {
-            display: flex; align-items: stretch; border-bottom: 1px solid #2d3748;
-            background: #0f1117; flex-shrink: 0;
+        .tabbar {
+            display: flex; align-items: stretch; border-bottom: 1px solid var(--border);
+            background: var(--bg); flex-shrink: 0; height: 34px;
         }
         .tab {
-            padding: 0 20px; height: 36px; display: flex; align-items: center; gap: 8px;
-            font-size: 12px; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent;
-            user-select: none;
+            display: flex; align-items: center; gap: 6px; padding: 0 16px;
+            color: var(--muted); cursor: pointer; font-size: 12px;
+            border-bottom: 2px solid transparent; user-select: none;
         }
-        .tab:hover { color: #e2e8f0; }
-        .tab.active { color: #e2e8f0; border-bottom-color: #f7c948; }
-        .tab .badge-count {
-            background: #2d3748; color: #94a3b8; font-size: 10px;
-            padding: 1px 6px; border-radius: 10px; min-width: 20px; text-align: center;
+        .tab:hover { color: var(--text); }
+        .tab.active { color: var(--text); border-bottom-color: var(--gold); }
+        .tab .cnt {
+            font-size: 10px; background: var(--hover); color: var(--muted);
+            padding: 1px 5px; border-radius: 8px;
         }
-        .tab .pnl-badge { font-size: 11px; font-weight: 700; }
-        .tab .pnl-badge.profit { color: #4ade80; }
-        .tab .pnl-badge.loss { color: #f87171; }
+        .tab .pnl { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .tab .pnl.up { color: var(--green); }
+        .tab .pnl.dn { color: var(--red); }
 
-        /* Tab content */
-        .tab-content { flex: 1; overflow-y: auto; }
-        .tab-pane { display: none; height: 100%; }
-        .tab-pane.active { display: block; }
+        /* Tab panes */
+        .tab-content { flex: 1; overflow: hidden; position: relative; }
+        .pane { display: none; height: 100%; overflow-y: auto; }
+        .pane.active { display: block; }
 
-        /* Tables */
-        .data-table { width: 100%; border-collapse: collapse; }
-        .data-table th {
-            text-align: left; font-size: 11px; color: #64748b; font-weight: 500;
-            padding: 6px 12px; border-bottom: 1px solid #1e2535;
-            position: sticky; top: 0; background: #161b27; z-index: 1;
+        /* ── Tables ── */
+        table { width: 100%; border-collapse: collapse; }
+        thead th {
+            text-align: left; font-size: 11px; color: var(--muted); font-weight: 500;
+            padding: 5px 12px; border-bottom: 1px solid var(--border);
+            position: sticky; top: 0; background: var(--panel); z-index: 2;
+            white-space: nowrap;
         }
-        .data-table td { font-size: 12px; padding: 7px 12px; border-bottom: 1px solid #1a2030; }
-        .data-table tr:last-child td { border-bottom: none; }
-        .data-table tr:hover td { background: #1e2535; }
-        .empty-msg { text-align: center; color: #4a5568; padding: 20px; font-size: 12px; }
+        tbody td {
+            padding: 6px 12px; border-bottom: 1px solid #1a1f2e;
+            font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap;
+        }
+        tbody tr:last-child td { border-bottom: none; }
+        tbody tr:hover td { background: #252a38; }
+        .empty { color: var(--muted); text-align: center; padding: 18px; font-size: 12px; }
 
-        /* Colours */
-        .buy  { color: #4ade80; font-weight: 600; }
-        .sell { color: #f87171; font-weight: 600; }
-        .profit { color: #4ade80; font-weight: 600; }
-        .loss   { color: #f87171; font-weight: 600; }
-        .neutral { color: #94a3b8; }
-        .open-badge {
-            background: #1e3a5f; color: #60a5fa; font-size: 10px;
-            padding: 2px 7px; border-radius: 10px; font-weight: 600;
+        /* ── Colours ── */
+        .up   { color: var(--green); }
+        .dn   { color: var(--red); }
+        .bold { font-weight: 600; }
+        .muted { color: var(--muted); }
+        .open-tag {
+            display: inline-block; font-size: 10px; padding: 1px 6px;
+            border-radius: 3px; background: #1a3a5c; color: var(--blue);
+            font-weight: 600; border: 1px solid #1e4a7a;
         }
 
-        /* P&L summary cards */
-        .pnl-grid {
+        /* ── P&L Summary grid ── */
+        .stat-grid {
             display: grid; grid-template-columns: repeat(4, 1fr);
-            gap: 1px; background: #2d3748; height: 100%;
+            gap: 1px; background: var(--border); height: 100%;
         }
-        .pnl-card {
-            background: #161b27; padding: 12px 16px;
+        .stat-card {
+            background: var(--panel); padding: 10px 16px;
             display: flex; flex-direction: column; gap: 4px;
         }
-        .pnl-card .label { font-size: 11px; color: #64748b; }
-        .pnl-card .value { font-size: 18px; font-weight: 700; }
-        .pnl-card .sub   { font-size: 11px; color: #64748b; }
+        .stat-card .lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-card .val { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .stat-card .sub { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+        /* Layout wrapper */
+        #layout { display: flex; flex-direction: column; height: 100vh; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>NIFTY 50</h1>
-        <span class="live-price" id="live-price">--</span>
-        <span class="price-change" id="price-change"></span>
-        <span class="badge" id="market-status-badge">checking...</span>
-        <div class="intervals">
-            <button class="btn" onclick="changeInterval(event,'5minute')">5m</button>
-            <button class="btn active" onclick="changeInterval(event,'15minute')">15m</button>
-            <button class="btn" onclick="changeInterval(event,'60minute')">1hr</button>
+<div id="layout">
+
+    <!-- Top bar -->
+    <div id="topbar">
+        <div class="tb-symbol">NIFTY 50</div>
+        <div class="tb-price" id="tb-price">--</div>
+        <div class="tb-change" id="tb-change"></div>
+        <div class="tb-ohlc" id="tb-ohlc">
+            <span>O <b id="ohlc-o">--</b></span>
+            <span>H <b id="ohlc-h">--</b></span>
+            <span>L <b id="ohlc-l">--</b></span>
+            <span>C <b id="ohlc-c">--</b></span>
         </div>
-        <button class="reset-btn" onclick="resetView()">Reset view</button>
+        <div class="mkt-badge" id="mkt-badge">checking...</div>
+        <div class="tb-right">
+            <div class="iv-group">
+                <button class="iv-btn" onclick="setInterval_(event,'5minute')">5m</button>
+                <button class="iv-btn active" onclick="setInterval_(event,'15minute')">15m</button>
+                <button class="iv-btn" onclick="setInterval_(event,'60minute')">1h</button>
+            </div>
+            <div class="tb-sep"></div>
+            <button class="icon-btn" onclick="resetView()">Reset</button>
+        </div>
     </div>
 
+    <!-- Chart -->
     <div id="chart"></div>
 
-    <div class="bottom-panel" id="bottom-panel">
-        <div class="tab-bar">
-            <div class="tab active" onclick="switchTab('positions')">
-                Positions
-                <span class="pnl-badge" id="pos-pnl-badge"></span>
+    <!-- Drag handle -->
+    <div id="drag-handle"></div>
+
+    <!-- Bottom panel -->
+    <div id="bottom">
+        <div class="tabbar">
+            <div class="tab active" data-tab="positions" onclick="switchTab(this)">
+                Positions <span class="pnl" id="pos-badge"></span>
             </div>
-            <div class="tab" onclick="switchTab('orders')">
-                Orders
-                <span class="badge-count" id="orders-count">0</span>
+            <div class="tab" data-tab="orders" onclick="switchTab(this)">
+                Orders <span class="cnt" id="orders-cnt">0</span>
             </div>
-            <div class="tab" onclick="switchTab('pnl')">
-                P&amp;L Summary
-                <span class="pnl-badge" id="total-pnl-badge"></span>
+            <div class="tab" data-tab="summary" onclick="switchTab(this)">
+                P&amp;L Summary <span class="pnl" id="summary-badge"></span>
             </div>
         </div>
 
         <div class="tab-content">
+
             <!-- POSITIONS -->
-            <div class="tab-pane active" id="tab-positions">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Symbol</th><th>Side</th><th>Strike</th><th>Qty (lots)</th>
-                            <th>Entry Spot</th><th>Entry Time</th>
-                            <th>Entry Prem</th><th>Live Prem</th>
-                            <th>Unrealised P&amp;L (pts)</th><th>Unrealised P&amp;L (&#8377;)</th>
-                        </tr>
-                    </thead>
-                    <tbody id="positions-body">
-                        <tr><td colspan="10" class="empty-msg">No open positions</td></tr>
+            <div class="pane active" id="pane-positions">
+                <table>
+                    <thead><tr>
+                        <th>Symbol</th><th>Side</th><th>Strike</th><th>Qty</th>
+                        <th>Entry Spot</th><th>Entry Time</th>
+                        <th>Entry Prem</th><th>Live Prem</th>
+                        <th>P&amp;L (pts)</th><th>P&amp;L (&#8377;)</th>
+                    </tr></thead>
+                    <tbody id="pos-body">
+                        <tr><td colspan="10" class="empty">No open positions</td></tr>
                     </tbody>
                 </table>
             </div>
 
             <!-- ORDERS -->
-            <div class="tab-pane" id="tab-orders">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Entry Time</th><th>Side</th><th>Symbol</th>
-                            <th>Entry Spot</th><th>Entry Prem</th>
-                            <th>Exit Prem</th><th>Exit Time</th><th>Exit Reason</th>
-                            <th>P&amp;L (pts)</th><th>P&amp;L (&#8377;)</th>
-                        </tr>
-                    </thead>
+            <div class="pane" id="pane-orders">
+                <table>
+                    <thead><tr>
+                        <th>Entry Time</th><th>Side</th><th>Symbol</th>
+                        <th>Entry Spot</th><th>Entry Prem</th><th>Exit Prem</th>
+                        <th>Exit Time</th><th>Reason</th>
+                        <th>P&amp;L (pts)</th><th>P&amp;L (&#8377;)</th>
+                    </tr></thead>
                     <tbody id="orders-body">
-                        <tr><td colspan="10" class="empty-msg">No trades yet</td></tr>
+                        <tr><td colspan="10" class="empty">No trades yet</td></tr>
                     </tbody>
                 </table>
             </div>
 
             <!-- P&L SUMMARY -->
-            <div class="tab-pane" id="tab-pnl">
-                <div class="pnl-grid">
-                    <div class="pnl-card">
-                        <div class="label">Total P&amp;L</div>
-                        <div class="value" id="stat-total-pnl-inr">--</div>
-                        <div class="sub" id="stat-total-pnl-pts">-- pts</div>
-                    </div>
-                    <div class="pnl-card">
-                        <div class="label">Win Rate</div>
-                        <div class="value" id="stat-winrate">--</div>
-                        <div class="sub" id="stat-wins-losses">-- wins / -- losses</div>
-                    </div>
-                    <div class="pnl-card">
-                        <div class="label">Avg Win</div>
-                        <div class="value profit" id="stat-avg-win">--</div>
-                        <div class="sub" id="stat-avg-win-inr">--</div>
-                    </div>
-                    <div class="pnl-card">
-                        <div class="label">Avg Loss</div>
-                        <div class="value loss" id="stat-avg-loss">--</div>
-                        <div class="sub" id="stat-avg-loss-inr">--</div>
-                    </div>
-                    <div class="pnl-card">
-                        <div class="label">Total Trades</div>
-                        <div class="value" id="stat-total-trades">0</div>
-                        <div class="sub">closed trades</div>
-                    </div>
-                    <div class="pnl-card">
-                        <div class="label">Best Trade</div>
-                        <div class="value profit" id="stat-best">--</div>
-                        <div class="sub" id="stat-best-inr">--</div>
-                    </div>
-                    <div class="pnl-card">
-                        <div class="label">Worst Trade</div>
-                        <div class="value loss" id="stat-worst">--</div>
-                        <div class="sub" id="stat-worst-inr">--</div>
-                    </div>
-                    <div class="pnl-card">
-                        <div class="label">Max Drawdown</div>
-                        <div class="value loss" id="stat-maxdd">--</div>
-                        <div class="sub" id="stat-maxdd-inr">--</div>
-                    </div>
+            <div class="pane" id="pane-summary">
+                <div class="stat-grid">
+                    <div class="stat-card"><div class="lbl">Total P&amp;L</div><div class="val" id="s-total-inr">--</div><div class="sub" id="s-total-pts">-- pts</div></div>
+                    <div class="stat-card"><div class="lbl">Win Rate</div><div class="val up" id="s-winrate">--</div><div class="sub" id="s-wl">-- W / -- L</div></div>
+                    <div class="stat-card"><div class="lbl">Avg Win</div><div class="val up" id="s-avg-win">--</div><div class="sub" id="s-avg-win-inr">--</div></div>
+                    <div class="stat-card"><div class="lbl">Avg Loss</div><div class="val dn" id="s-avg-loss">--</div><div class="sub" id="s-avg-loss-inr">--</div></div>
+                    <div class="stat-card"><div class="lbl">Total Trades</div><div class="val" id="s-trades">0</div><div class="sub">closed</div></div>
+                    <div class="stat-card"><div class="lbl">Best Trade</div><div class="val up" id="s-best">--</div><div class="sub" id="s-best-inr">--</div></div>
+                    <div class="stat-card"><div class="lbl">Worst Trade</div><div class="val dn" id="s-worst">--</div><div class="sub" id="s-worst-inr">--</div></div>
+                    <div class="stat-card"><div class="lbl">Max Drawdown</div><div class="val dn" id="s-dd">--</div><div class="sub" id="s-dd-inr">--</div></div>
                 </div>
             </div>
+
         </div>
     </div>
+</div>
 
-    <script>
-        // ── Layout constants ──
-        const HEADER_H = 52;
-        const BOTTOM_H = 240;
-        const INTERVAL_SECONDS = { "5minute": 300, "15minute": 900, "60minute": 3600 };
+<script>
+    const LOT = 65;
+    const IV  = { "5minute": 300, "15minute": 900, "60minute": 3600 };
+    const HEADER_H = 48;
+    const DRAG_H   = 4;
+    let bottomH = 220;
+    let isDragging = false;
 
-        let currentPrice = null;
-        let prevClose = null;
-        let lastCandle = null;
-        let activePosition = null;
-        let currentIntervalSeconds = 900;
-        let shouldResetView = true;
-        let lastTickDate = null;
-        let optionSymbol = null;
-        let optionEntryPremium = null;
-        let optionCurrentPremium = null;
-        let LOT_SIZE = 65;
+    let currentPrice = null, prevClose = null;
+    let activePosition = null;
+    let optSym = null, optEntry = null, optLive = null;
+    let shouldReset = true;
+    let lastTickDate = null;
 
-        // ── Chart setup ──
-        function chartHeight() { return window.innerHeight - HEADER_H - BOTTOM_H; }
+    // ── Layout ──
+    function totalBottom() { return bottomH + DRAG_H; }
+    function chartH() { return window.innerHeight - HEADER_H - DRAG_H - bottomH; }
 
-        const chart = LightweightCharts.createChart(document.getElementById("chart"), {
-            layout: { backgroundColor: "#0f1117", textColor: "#e2e8f0" },
-            grid: { vertLines: { color: "#1e2535" }, horzLines: { color: "#1e2535" } },
-            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-            timeScale: {
-                borderColor: "#2d3748", timeVisible: true, secondsVisible: false,
-                tickMarkFormatter: (t) => formatAxisTick(t)
-            },
-            localization: { timeFormatter: (t) => formatHoverTime(t) },
-            width: document.getElementById("chart").clientWidth,
-            height: chartHeight(),
+    function applyLayout() {
+        document.getElementById("chart").style.height = chartH() + "px";
+        document.getElementById("bottom").style.height = bottomH + "px";
+        chart.resize(document.getElementById("chart").clientWidth, chartH());
+    }
+
+    // ── Drag to resize ──
+    const handle = document.getElementById("drag-handle");
+    handle.addEventListener("mousedown", e => { isDragging = true; e.preventDefault(); });
+    document.addEventListener("mousemove", e => {
+        if (!isDragging) return;
+        const newBottom = window.innerHeight - e.clientY - DRAG_H;
+        if (newBottom >= 100 && newBottom <= 520) { bottomH = newBottom; applyLayout(); }
+    });
+    document.addEventListener("mouseup", () => { isDragging = false; });
+    window.addEventListener("resize", applyLayout);
+
+    // ── Chart ──
+    const chart = LightweightCharts.createChart(document.getElementById("chart"), {
+        layout: { backgroundColor: "#131722", textColor: "#d1d4dc" },
+        grid: { vertLines: { color: "#1e222d" }, horzLines: { color: "#1e222d" } },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        rightPriceScale: { borderColor: "#2a2e39" },
+        timeScale: {
+            borderColor: "#2a2e39", timeVisible: true, secondsVisible: false,
+            tickMarkFormatter: t => fmtAxis(t)
+        },
+        localization: { timeFormatter: t => fmtHover(t) },
+        width: document.getElementById("chart").clientWidth,
+        height: chartH(),
+    });
+    document.getElementById("chart").style.height = chartH() + "px";
+    document.getElementById("bottom").style.height = bottomH + "px";
+
+    const candles = chart.addCandlestickSeries({
+        upColor: "#26a69a", downColor: "#ef5350",
+        borderUpColor: "#26a69a", borderDownColor: "#ef5350",
+        wickUpColor: "#26a69a", wickDownColor: "#ef5350",
+    });
+    const stLine = chart.addLineSeries({ color: "#a78bfa", lineWidth: 2, title: "ST" });
+
+    // Crosshair → update OHLC in header
+    chart.subscribeCrosshairMove(param => {
+        if (!param.time) return;
+        const c = param.seriesPrices.get(candles);
+        if (!c) return;
+        set("ohlc-o", fmt(c.open));
+        set("ohlc-h", fmt(c.high));
+        set("ohlc-l", fmt(c.low));
+        set("ohlc-c", fmt(c.close));
+        const chg = c.close - c.open;
+        document.getElementById("ohlc-c").style.color = chg >= 0 ? "var(--green)" : "var(--red)";
+    });
+
+    // ── Time formatters ──
+    function fmtAxis(t) {
+        const d = new Date(t * 1000);
+        const k = d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata" });
+        if (k !== lastTickDate) { lastTickDate = k; return d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" }); }
+        return d.toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+    }
+    function fmtHover(t) {
+        const d = new Date(t * 1000);
+        return d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" })
+            + "  " + d.toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+    }
+    function fmt(n)   { return n != null ? Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "--"; }
+    function fmtI(n)  { return n != null ? Math.round(n).toLocaleString("en-IN") : "--"; }
+    function fmtPts(n){ return n != null ? (n >= 0 ? "+" : "") + n.toFixed(2) : "--"; }
+    function fmtInr(n){ return n != null ? (n >= 0 ? "+" : "") + fmtI(n) : "--"; }
+    function set(id, v) { const el = document.getElementById(id); if (el) el.innerHTML = v; }
+    function col(v)   { return v > 0 ? "up" : v < 0 ? "dn" : "muted"; }
+
+    // ── Market status ──
+    function pollMarket() {
+        fetch("/api/market_status").then(r => r.json()).then(d => {
+            const b = document.getElementById("mkt-badge");
+            b.textContent = d.is_open ? "● MARKET OPEN" : "○ " + d.status.toUpperCase();
+            b.style.background = d.is_open ? "#0d2b1a" : "var(--hover)";
+            b.style.color      = d.is_open ? "var(--green)" : "var(--muted)";
         });
+    }
+    pollMarket(); setInterval(pollMarket, 60000);
 
-        document.getElementById("chart").style.height = chartHeight() + "px";
-        document.getElementById("bottom-panel").style.height = BOTTOM_H + "px";
+    // ── Controls ──
+    function resetView() { chart.timeScale().resetTimeScale(); chart.timeScale().scrollToRealTime(); }
+    function setInterval_(e, iv) {
+        document.querySelectorAll(".iv-btn").forEach(b => b.classList.remove("active"));
+        e.target.classList.add("active");
+        shouldReset = true;
+        socket.emit("change_interval", { interval: iv });
+    }
+    function switchTab(el) {
+        document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+        document.querySelectorAll(".pane").forEach(p => p.classList.remove("active"));
+        el.classList.add("active");
+        document.getElementById("pane-" + el.dataset.tab).classList.add("active");
+    }
 
-        const candleSeries = chart.addCandlestickSeries({
-            upColor: "#4ade80", downColor: "#f87171",
-            borderUpColor: "#4ade80", borderDownColor: "#f87171",
-            wickUpColor: "#4ade80", wickDownColor: "#f87171",
+    // ── Socket ──
+    const socket = io();
+
+    socket.on("historical_data", data => {
+        if (!data || !data.length) return;
+        candles.setData(data);
+        stLine.setData(data.filter(d => d.supertrend != null).map(d => ({ time: d.time, value: d.supertrend })));
+
+        const markers = [];
+        data.forEach(d => {
+            if (d.signal === "BUY")  markers.push({ time: d.time, position: "belowBar", color: "#26a69a", shape: "arrowUp",   text: "B" });
+            if (d.signal === "SELL") markers.push({ time: d.time, position: "aboveBar", color: "#ef5350", shape: "arrowDown", text: "S" });
         });
-        const supertrendSeries = chart.addLineSeries({
-            color: "#a78bfa", lineWidth: 2, title: "Supertrend",
-        });
+        candles.setMarkers(markers);
 
-        window.addEventListener("resize", () => {
-            chart.resize(document.getElementById("chart").clientWidth, chartHeight());
-            document.getElementById("chart").style.height = chartHeight() + "px";
-        });
+        const last = data[data.length - 1];
+        currentPrice = last.close;
+        prevClose = data.length > 1 ? data[data.length - 2].close : last.close;
+        updatePrice(last.close);
+        set("ohlc-o", fmt(last.open)); set("ohlc-h", fmt(last.high));
+        set("ohlc-l", fmt(last.low));  set("ohlc-c", fmt(last.close));
 
-        // ── Tab switching ──
-        function switchTab(name) {
-            document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-            document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
-            event.currentTarget.classList.add("active");
-            document.getElementById("tab-" + name).classList.add("active");
+        const sigs = data.filter(d => d.signal);
+        if (sigs.length) {
+            const s = sigs[sigs.length - 1];
+            activePosition = { side: s.signal, entry: s.close, entryTime: fmtHover(s.time) };
         }
+        if (shouldReset) { resetView(); shouldReset = false; }
+    });
 
-        // ── Time formatters ──
-        function formatAxisTick(time) {
-            const d = new Date(time * 1000);
-            const dateKey = d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata" });
-            if (dateKey !== lastTickDate) {
-                lastTickDate = dateKey;
-                return d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" });
-            }
-            return d.toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+    socket.on("live_price", d => { currentPrice = d.price; updatePrice(d.price); renderPos(); });
+
+    socket.on("live_option_price", d => {
+        if (d.symbol !== optSym) { optSym = d.symbol; optEntry = d.price; }
+        optLive = d.price;
+        renderPos();
+    });
+
+    socket.on("trade_history", trades => {
+        renderOrders(trades);
+        renderSummary(trades);
+        const open = trades.find(t => t.status === "OPEN");
+        open ? renderPosFromDb(open) : renderPos();
+    });
+
+    // ── Price display ──
+    function updatePrice(p) {
+        set("tb-price", fmt(p));
+        if (prevClose) {
+            const chg = p - prevClose, pct = chg / prevClose * 100;
+            const el = document.getElementById("tb-change");
+            el.textContent = (chg >= 0 ? "+" : "") + chg.toFixed(2) + "  (" + (chg >= 0 ? "+" : "") + pct.toFixed(2) + "%)";
+            el.className = "tb-change " + (chg >= 0 ? "up" : "dn");
+            document.getElementById("tb-price").className = "tb-price " + (chg >= 0 ? "up" : "dn");
         }
-        function formatHoverTime(time) {
-            const d = new Date(time * 1000);
-            return d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" })
-                + "  " + d.toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+    }
+
+    // ── Positions ──
+    function renderPosFromDb(t) {
+        const live   = optSym === t.symbol ? optLive : null;
+        const pnlPts = live != null ? (t.side === "BUY" ? live - t.entry_premium : t.entry_premium - live) : null;
+        const pnlInr = pnlPts != null ? pnlPts * LOT : null;
+        const c = pnlPts != null ? col(pnlPts) : "muted";
+
+        setBadge("pos-badge", pnlInr);
+        set("pos-body", `<tr>
+            <td class="bold">${t.symbol}</td>
+            <td class="${t.side === "BUY" ? "up bold" : "dn bold"}">${t.side}</td>
+            <td>${t.strike}</td><td>1 lot</td>
+            <td>${fmt(t.entry_spot)}</td><td class="muted">${t.entry_time}</td>
+            <td>${fmt(t.entry_premium)}</td>
+            <td>${live != null ? fmt(live) : '<span class="muted">--</span>'}</td>
+            <td class="${c} bold">${fmtPts(pnlPts)}</td>
+            <td class="${c} bold">${pnlInr != null ? "₹" + fmtInr(pnlInr) : "--"}</td>
+        </tr>`);
+    }
+
+    function renderPos() {
+        if (!activePosition) {
+            set("pos-body", '<tr><td colspan="10" class="empty">No open positions</td></tr>');
+            document.getElementById("pos-badge").textContent = "";
+            return;
         }
+        const cur = currentPrice || activePosition.entry;
+        const pnl = activePosition.side === "BUY" ? cur - activePosition.entry : activePosition.entry - cur;
+        set("pos-body", `<tr>
+            <td class="bold">${optSym || "--"}</td>
+            <td class="${activePosition.side === "BUY" ? "up bold" : "dn bold"}">${activePosition.side}</td>
+            <td>--</td><td>1 lot</td>
+            <td>${fmt(activePosition.entry)}</td><td class="muted">${activePosition.entryTime}</td>
+            <td>${optEntry != null ? fmt(optEntry) : "--"}</td>
+            <td>${optLive  != null ? fmt(optLive)  : "--"}</td>
+            <td class="${col(pnl)} bold">${fmtPts(pnl)}</td>
+            <td class="muted">--</td>
+        </tr>`);
+    }
 
-        // ── Market status ──
-        function updateMarketStatus() {
-            fetch("/api/market_status").then(r => r.json()).then(d => {
-                const b = document.getElementById("market-status-badge");
-                b.textContent = d.is_open ? "● MARKET OPEN" : "○ " + d.status.toUpperCase();
-                b.style.background = d.is_open ? "#14532d" : "#2d3748";
-                b.style.color = d.is_open ? "#4ade80" : "#94a3b8";
-            });
-        }
-        updateMarketStatus();
-        setInterval(updateMarketStatus, 60000);
-
-        function resetView() {
-            chart.timeScale().resetTimeScale();
-            chart.timeScale().scrollToRealTime();
-        }
-        function changeInterval(e, interval) {
-            document.querySelectorAll(".intervals .btn").forEach(b => b.classList.remove("active"));
-            e.target.classList.add("active");
-            currentIntervalSeconds = INTERVAL_SECONDS[interval] || 900;
-            shouldResetView = true;
-            socket.emit("change_interval", { interval });
-        }
-
-        // ── Socket ──
-        const socket = io();
-
-        socket.on("historical_data", (data) => {
-            if (!data || data.length === 0) return;
-            candleSeries.setData(data);
-            supertrendSeries.setData(data.filter(d => d.supertrend !== null).map(d => ({ time: d.time, value: d.supertrend })));
-
-            const markers = [];
-            data.forEach(d => {
-                if (d.signal === "BUY")  markers.push({ time: d.time, position: "belowBar", color: "#4ade80", shape: "arrowUp",   text: "BUY"  });
-                if (d.signal === "SELL") markers.push({ time: d.time, position: "aboveBar", color: "#f87171", shape: "arrowDown", text: "SELL" });
-            });
-            candleSeries.setMarkers(markers);
-
-            const last = data[data.length - 1];
-            currentPrice = last.close;
-            updatePriceDisplay(last.close);
-
-            const signals = data.filter(d => d.signal);
-            if (signals.length > 0) {
-                const s = signals[signals.length - 1];
-                activePosition = { side: s.signal, entry: s.close, entryTime: new Date(s.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) };
-            }
-
-            if (shouldResetView) { resetView(); shouldResetView = false; }
-        });
-
-        socket.on("live_price", (data) => {
-            currentPrice = data.price;
-            updatePriceDisplay(data.price);
-            renderPositions();
-        });
-
-        socket.on("live_option_price", (data) => {
-            if (data.symbol !== optionSymbol) {
-                optionSymbol = data.symbol;
-                optionEntryPremium = data.price;
-            }
-            optionCurrentPremium = data.price;
-            renderPositions();
-        });
-
-        socket.on("trade_history", (trades) => {
-            renderOrders(trades);
-            renderPnlSummary(trades);
-            const open = trades.find(t => t.status === "OPEN");
-            if (open) renderPositionFromDb(open);
-            else renderPositions();
-        });
-
-        // ── Price display ──
-        function updatePriceDisplay(price) {
-            document.getElementById("live-price").textContent = price.toLocaleString("en-IN");
-            if (prevClose && prevClose !== price) {
-                const chg = price - prevClose;
-                const pct = (chg / prevClose) * 100;
-                const el = document.getElementById("price-change");
-                el.textContent = `${chg >= 0 ? "+" : ""}${chg.toFixed(2)}  (${pct.toFixed(2)}%)`;
-                el.className = "price-change " + (chg >= 0 ? "profit" : "loss");
-                document.getElementById("live-price").style.color = chg >= 0 ? "#4ade80" : "#f87171";
-            }
-        }
-
-        // ── Positions tab ──
-        function renderPositionFromDb(open) {
-            const livePrem = optionSymbol === open.symbol ? optionCurrentPremium : null;
-            const entryPrem = open.entry_premium;
-            const unrealisedPts = livePrem !== null ? (open.side === "BUY" ? livePrem - entryPrem : entryPrem - livePrem) : null;
-            const unrealisedInr = unrealisedPts !== null ? unrealisedPts * LOT_SIZE : null;
-            const pnlClass = unrealisedPts === null ? "neutral" : (unrealisedPts >= 0 ? "profit" : "loss");
-
-            const pnlPts  = unrealisedPts  !== null ? `<span class="${pnlClass}">${unrealisedPts >= 0 ? "+" : ""}${unrealisedPts.toFixed(2)}</span>` : "<span class='neutral'>--</span>";
-            const pnlInr  = unrealisedInr  !== null ? `<span class="${pnlClass}">${unrealisedInr >= 0 ? "+" : ""}${Math.round(unrealisedInr).toLocaleString("en-IN")}</span>` : "<span class='neutral'>--</span>";
-            const livePremCell = livePrem !== null ? livePrem.toFixed(2) : "<span class='neutral'>--</span>";
-
-            // Update Positions tab badge
-            if (unrealisedInr !== null) {
-                const b = document.getElementById("pos-pnl-badge");
-                b.textContent = (unrealisedInr >= 0 ? "+" : "") + Math.round(unrealisedInr).toLocaleString("en-IN");
-                b.className = "pnl-badge " + (unrealisedInr >= 0 ? "profit" : "loss");
-            }
-
-            document.getElementById("positions-body").innerHTML = `<tr>
-                <td>${open.symbol}</td>
-                <td class="${open.side === "BUY" ? "buy" : "sell"}">${open.side}</td>
-                <td>${open.strike}</td>
-                <td>1</td>
-                <td>${open.entry_spot.toLocaleString("en-IN")}</td>
-                <td>${open.entry_time}</td>
-                <td>${entryPrem.toFixed(2)}</td>
-                <td>${livePremCell}</td>
-                <td>${pnlPts}</td>
-                <td>${pnlInr}</td>
+    // ── Orders ──
+    function renderOrders(trades) {
+        set("orders-cnt", trades.length);
+        if (!trades.length) { set("orders-body", '<tr><td colspan="10" class="empty">No trades yet</td></tr>'); return; }
+        set("orders-body", trades.map(t => {
+            const isOpen = t.status === "OPEN";
+            const sc = t.side === "BUY" ? "up bold" : "dn bold";
+            const pc = !isOpen && t.pnl_points != null ? col(t.pnl_points) + " bold" : "muted";
+            return `<tr>
+                <td class="muted">${t.entry_time}</td>
+                <td class="${sc}">${t.side}</td>
+                <td>${t.symbol}</td>
+                <td>${fmt(t.entry_spot)}</td>
+                <td>${fmt(t.entry_premium)}</td>
+                <td>${t.exit_premium != null ? fmt(t.exit_premium) : '<span class="muted">--</span>'}</td>
+                <td class="muted">${t.exit_time || "--"}</td>
+                <td>${isOpen ? '<span class="open-tag">OPEN</span>' : (t.exit_reason || "--")}</td>
+                <td class="${pc}">${!isOpen && t.pnl_points != null ? fmtPts(t.pnl_points) : "--"}</td>
+                <td class="${pc}">${!isOpen && t.pnl_rupees != null ? "₹" + fmtInr(t.pnl_rupees) : "--"}</td>
             </tr>`;
-        }
+        }).join(""));
+    }
 
-        function renderPositions() {
-            if (!activePosition) {
-                document.getElementById("positions-body").innerHTML = '<tr><td colspan="10" class="empty-msg">No open positions</td></tr>';
-                document.getElementById("pos-pnl-badge").textContent = "";
-                return;
-            }
-            const spotPnl = activePosition.side === "BUY"
-                ? (currentPrice || activePosition.entry) - activePosition.entry
-                : activePosition.entry - (currentPrice || activePosition.entry);
-            const pnlClass = spotPnl >= 0 ? "profit" : "loss";
-            document.getElementById("positions-body").innerHTML = `<tr>
-                <td>${optionSymbol || "--"}</td>
-                <td class="${activePosition.side === "BUY" ? "buy" : "sell"}">${activePosition.side}</td>
-                <td>--</td><td>1</td>
-                <td>${activePosition.entry.toLocaleString("en-IN")}</td>
-                <td>${activePosition.entryTime}</td>
-                <td>${optionEntryPremium !== null ? optionEntryPremium.toFixed(2) : "--"}</td>
-                <td>${optionCurrentPremium !== null ? optionCurrentPremium.toFixed(2) : "--"}</td>
-                <td class="${pnlClass}">${spotPnl >= 0 ? "+" : ""}${spotPnl.toFixed(2)}</td>
-                <td>--</td>
-            </tr>`;
-        }
+    // ── P&L Summary ──
+    function renderSummary(trades) {
+        const closed = trades.filter(t => t.status === "CLOSED" && t.pnl_points != null);
+        if (!closed.length) return;
+        const totPts = closed.reduce((s,t)=>s+t.pnl_points, 0);
+        const totInr = closed.reduce((s,t)=>s+t.pnl_rupees, 0);
+        const wins   = closed.filter(t=>t.pnl_points > 0);
+        const losses = closed.filter(t=>t.pnl_points <= 0);
+        const wr     = (wins.length / closed.length * 100).toFixed(1);
+        const avgW   = wins.length   ? wins.reduce((s,t)=>s+t.pnl_points,0)/wins.length : 0;
+        const avgL   = losses.length ? losses.reduce((s,t)=>s+t.pnl_points,0)/losses.length : 0;
+        const best   = Math.max(...closed.map(t=>t.pnl_points));
+        const worst  = Math.min(...closed.map(t=>t.pnl_points));
+        let eq=0, peak=0, dd=0;
+        [...closed].reverse().forEach(t=>{ eq+=t.pnl_points; peak=Math.max(peak,eq); dd=Math.max(dd,peak-eq); });
 
-        // ── Orders tab ──
-        function renderOrders(trades) {
-            document.getElementById("orders-count").textContent = trades.length;
-            if (!trades.length) {
-                document.getElementById("orders-body").innerHTML = '<tr><td colspan="10" class="empty-msg">No trades yet</td></tr>';
-                return;
-            }
-            document.getElementById("orders-body").innerHTML = trades.map(t => {
-                const sideClass = t.side === "BUY" ? "buy" : "sell";
-                const isOpen = t.status === "OPEN";
-                const pnlPts = !isOpen && t.pnl_points != null
-                    ? `<span class="${t.pnl_points >= 0 ? "profit" : "loss"}">${t.pnl_points >= 0 ? "+" : ""}${t.pnl_points.toFixed(2)}</span>` : "--";
-                const pnlInr = !isOpen && t.pnl_rupees != null
-                    ? `<span class="${t.pnl_rupees >= 0 ? "profit" : "loss"}">${t.pnl_rupees >= 0 ? "+" : ""}${Math.round(t.pnl_rupees).toLocaleString("en-IN")}</span>` : "--";
-                const exitReason = isOpen
-                    ? `<span class="open-badge">OPEN</span>`
-                    : (t.exit_reason || "--");
-                return `<tr>
-                    <td>${t.entry_time}</td>
-                    <td class="${sideClass}">${t.side}</td>
-                    <td>${t.symbol}</td>
-                    <td>${t.entry_spot.toLocaleString("en-IN")}</td>
-                    <td>${t.entry_premium.toFixed(2)}</td>
-                    <td>${t.exit_premium != null ? t.exit_premium.toFixed(2) : "--"}</td>
-                    <td>${t.exit_time || "--"}</td>
-                    <td>${exitReason}</td>
-                    <td>${pnlPts}</td>
-                    <td>${pnlInr}</td>
-                </tr>`;
-            }).join("");
-        }
+        const tc = col(totPts);
+        set("s-total-inr",  `<span class="${tc}">₹${fmtInr(totInr)}</span>`);
+        set("s-total-pts",  `${fmtPts(totPts)} pts`);
+        set("s-winrate",    `${wr}%`);
+        set("s-wl",         `${wins.length} W / ${losses.length} L`);
+        set("s-avg-win",    `${fmtPts(avgW)} pts`);
+        set("s-avg-win-inr",`₹${fmtInr(avgW * LOT)}`);
+        set("s-avg-loss",   `${fmtPts(avgL)} pts`);
+        set("s-avg-loss-inr",`₹${fmtInr(avgL * LOT)}`);
+        set("s-trades",     closed.length);
+        set("s-best",       `${fmtPts(best)} pts`);
+        set("s-best-inr",   `₹${fmtInr(best * LOT)}`);
+        set("s-worst",      `${fmtPts(worst)} pts`);
+        set("s-worst-inr",  `₹${fmtInr(worst * LOT)}`);
+        set("s-dd",         `-${dd.toFixed(2)} pts`);
+        set("s-dd-inr",     `-₹${fmtInr(dd * LOT)}`);
+        setBadge("summary-badge", totInr);
+    }
 
-        // ── P&L Summary tab ──
-        function renderPnlSummary(trades) {
-            const closed = trades.filter(t => t.status === "CLOSED" && t.pnl_points != null);
-            if (!closed.length) return;
-
-            const totalPts = closed.reduce((s, t) => s + t.pnl_points, 0);
-            const totalInr = closed.reduce((s, t) => s + t.pnl_rupees, 0);
-            const wins   = closed.filter(t => t.pnl_points > 0);
-            const losses = closed.filter(t => t.pnl_points <= 0);
-            const winRate = (wins.length / closed.length * 100).toFixed(1);
-            const avgWinPts  = wins.length   ? wins.reduce((s,t)=>s+t.pnl_points,0)/wins.length : 0;
-            const avgLossPts = losses.length ? losses.reduce((s,t)=>s+t.pnl_points,0)/losses.length : 0;
-            const avgWinInr  = avgWinPts  * LOT_SIZE;
-            const avgLossInr = avgLossPts * LOT_SIZE;
-            const bestPts  = Math.max(...closed.map(t=>t.pnl_points));
-            const worstPts = Math.min(...closed.map(t=>t.pnl_points));
-
-            // Max drawdown
-            let equity=0, peak=0, maxDd=0;
-            [...closed].reverse().forEach(t => {
-                equity += t.pnl_points;
-                peak = Math.max(peak, equity);
-                maxDd = Math.max(maxDd, peak - equity);
-            });
-
-            const totClass = totalPts >= 0 ? "profit" : "loss";
-            setText("stat-total-pnl-inr", `<span class="${totClass}">${totalInr >= 0 ? "+" : ""}${Math.round(totalInr).toLocaleString("en-IN")}</span>`);
-            setText("stat-total-pnl-pts",  `${totalPts >= 0 ? "+" : ""}${totalPts.toFixed(2)} pts`);
-            setText("stat-winrate",  `<span class="profit">${winRate}%</span>`);
-            setText("stat-wins-losses", `${wins.length} wins / ${losses.length} losses`);
-            setText("stat-avg-win",  `+${avgWinPts.toFixed(2)} pts`);
-            setText("stat-avg-win-inr",  `+₹${Math.round(avgWinInr).toLocaleString("en-IN")}`);
-            setText("stat-avg-loss", `${avgLossPts.toFixed(2)} pts`);
-            setText("stat-avg-loss-inr", `₹${Math.round(avgLossInr).toLocaleString("en-IN")}`);
-            setText("stat-total-trades", closed.length);
-            setText("stat-best",  `+${bestPts.toFixed(2)} pts`);
-            setText("stat-best-inr",  `+₹${Math.round(bestPts * LOT_SIZE).toLocaleString("en-IN")}`);
-            setText("stat-worst", `${worstPts.toFixed(2)} pts`);
-            setText("stat-worst-inr", `₹${Math.round(worstPts * LOT_SIZE).toLocaleString("en-IN")}`);
-            setText("stat-maxdd",  `-${maxDd.toFixed(2)} pts`);
-            setText("stat-maxdd-inr", `-₹${Math.round(maxDd * LOT_SIZE).toLocaleString("en-IN")}`);
-
-            // Header badge
-            const b = document.getElementById("total-pnl-badge");
-            b.textContent = (totalInr >= 0 ? "+" : "") + Math.round(totalInr).toLocaleString("en-IN");
-            b.className = "pnl-badge " + (totalInr >= 0 ? "profit" : "loss");
-        }
-
-        function setText(id, html) {
-            document.getElementById(id).innerHTML = html;
-        }
-    </script>
+    function setBadge(id, inr) {
+        const el = document.getElementById(id);
+        if (inr == null) { el.textContent = ""; return; }
+        el.textContent = (inr >= 0 ? "+" : "") + "₹" + fmtI(inr);
+        el.className = "pnl " + (inr >= 0 ? "up" : "dn");
+    }
+</script>
 </body>
 </html>
