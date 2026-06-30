@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import requests
 import subprocess
@@ -6,6 +7,10 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 from kiteconnect import KiteConnect
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from telegram_bot import send_eod_summary
+from paper_trades import get_trade_history
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=BASE_DIR / ".env")
@@ -19,6 +24,7 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 last_update_id = 0
 login_url_sent_date = None
+eod_sent_date = None
 
 
 def send_message(text):
@@ -140,13 +146,22 @@ def main():
 
     while True:
         now = datetime.now(IST)
+        today = now.date()
 
         # Auto-send login URL at 8:50 AM IST on weekdays
         if now.weekday() < 5 and now.hour == 8 and now.minute == 50:
-            today = now.date()
             if login_url_sent_date != today:
                 send_login_url()
                 login_url_sent_date = today
+
+        # Auto-send EOD P&L summary at 3:31 PM IST on weekdays
+        if now.weekday() < 5 and now.hour == 15 and now.minute == 31:
+            if eod_sent_date != today:
+                try:
+                    send_eod_summary(get_trade_history(limit=100))
+                    eod_sent_date = today
+                except Exception as e:
+                    print(f"EOD summary error: {e}")
 
         poll_updates()
         time.sleep(2)

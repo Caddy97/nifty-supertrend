@@ -554,7 +554,7 @@
             return `<tr>
                 <td class="muted">${t.entry_time}</td>
                 <td class="${sc}">${t.side}</td>
-                <td>${t.symbol}</td>
+                <td>${t.symbol} ${t.trade_type === "FUT" ? '<span style="color:var(--gold);font-size:10px;margin-left:4px">FUT</span>' : '<span style="color:var(--blue);font-size:10px;margin-left:4px">OPT</span>'}</td>
                 <td>${fmt(t.entry_spot)}</td>
                 <td>${fmt(t.entry_premium)}</td>
                 <td>${t.exit_premium != null ? fmt(t.exit_premium) : '<span class="muted">--</span>'}</td>
