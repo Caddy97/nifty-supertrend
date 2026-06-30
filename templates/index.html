@@ -506,7 +506,13 @@
                 <td class="${c} bold">${pnlInr != null ? "₹" + fmtInr(pnlInr) : "--"}</td>
             </tr>`;
         });
-        set("pos-body", rows.join(""));
+        const totalC = col(totalPnlInr);
+        const totalRow = `<tr style="border-top:1px solid var(--border);background:var(--hover)">
+            <td colspan="8" class="bold" style="text-align:right;padding-right:12px;color:var(--muted)">Total P&amp;L</td>
+            <td class="${totalC} bold">${fmtPts(totalPnlInr / LOT)}</td>
+            <td class="${totalC} bold">₹${fmtInr(totalPnlInr)}</td>
+        </tr>`;
+        set("pos-body", rows.join("") + totalRow);
         setBadge("pos-badge", totalPnlInr || null);
     }
 
