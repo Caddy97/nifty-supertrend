@@ -298,4 +298,4 @@ if __name__ == "__main__":
     refresh_thread.daemon = True
     refresh_thread.start()
 
-    socketio.run(app, debug=False, port=5001, allow_unsafe_werkzeug=True)
+    socketio.run(app, debug=False, host="0.0.0.0", port=5001, allow_unsafe_werkzeug=True)
