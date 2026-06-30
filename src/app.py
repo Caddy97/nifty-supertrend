@@ -17,7 +17,7 @@ from market_calendar import is_market_open, market_status
 from strike_selector import get_atm_strike
 from option_lookup import get_monthly_option_token
 from telegram_bot import send_signal_alert, send_exit_alert
-from paper_trades import init_db, open_trade, close_open_trade, get_open_trade, get_trade_history
+from paper_trades import init_db, open_trade, close_open_trade, get_open_trade, get_open_trades, close_trade_by_id, get_trade_history
 
 load_dotenv()
 API_KEY = os.getenv("KITE_API_KEY")
@@ -97,45 +97,53 @@ def build_chart_data(interval):
             strike = get_atm_strike(spot)
             opt_type = "CE" if side == "BUY" else "PE"
             info = get_monthly_option_token(strike, opt_type)
+            last_acted_signal["time"] = last["time"]
             if info:
                 set_active_option(info["instrument_token"], info["tradingsymbol"])
-                last_acted_signal["time"] = last["time"]
-                print(f"New {side} signal -> tracking {info['tradingsymbol']}")
-                try:
-                    kite_inst = get_kite()
+            print(f"New {side} signal @ {spot}")
+            try:
+                kite_inst = get_kite()
 
-                    def get_live_price(tradingsymbol):
-                        try:
-                            key = f"NFO:{tradingsymbol}"
-                            q = kite_inst.quote([key])
-                            price = q[key]["last_price"]
-                            return price if price and price > 0 else None
-                        except Exception as ex:
-                            print(f"Quote failed for {tradingsymbol}: {ex}")
-                            return None
+                def get_live_price(tradingsymbol):
+                    try:
+                        key = f"NFO:{tradingsymbol}"
+                        q = kite_inst.quote([key])
+                        price = q[key]["last_price"]
+                        return price if price and price > 0 else None
+                    except Exception as ex:
+                        print(f"Quote failed for {tradingsymbol}: {ex}")
+                        return None
 
-                    # Close existing paper trade if signal reversed
-                    existing = get_open_trade()
-                    if existing and existing["side"] != side:
-                        exit_premium = get_live_price(existing["symbol"]) or existing["entry_premium"]
-                        result = close_open_trade(spot, exit_premium, "signal")
+                # Close all existing open trades if signal reversed
+                for existing in get_open_trades():
+                    if existing["side"] != side:
+                        if existing.get("trade_type") == "FUT":
+                            exit_price = spot
+                        else:
+                            exit_price = get_live_price(existing["symbol"]) or existing["entry_premium"]
+                        result = close_trade_by_id(existing["id"], spot, exit_price, "signal")
                         if result:
                             send_exit_alert(existing["side"], spot, existing["symbol"],
-                                            existing["entry_premium"], exit_premium)
-                        socketio.emit("trade_history", get_trade_history(), namespace="/")
+                                            existing["entry_premium"], exit_price)
+                socketio.emit("trade_history", get_trade_history(), namespace="/")
 
-                    # Get real entry premium from Kite quote
-                    premium = get_live_price(info["tradingsymbol"])
-                    if premium is None:
-                        print(f"Live quote unavailable for {info['tradingsymbol']}, skipping trade")
-                        return out
+                # 1. Open Futures paper trade at spot price
+                open_trade(side, "FUT", 0, "NIFTY-FUT", spot, spot, trade_type="FUT")
 
-                    # Open new paper trade
-                    open_trade(side, opt_type, strike, info["tradingsymbol"], spot, premium)
-                    send_signal_alert(side, spot, strike, opt_type, info["tradingsymbol"], premium)
-                    socketio.emit("trade_history", get_trade_history(), namespace="/")
-                except Exception as e:
-                    print(f"Paper trade / Telegram error: {e}")
+                # 2. Open Option paper trade at live Kite quote
+                if info:
+                    opt_premium = get_live_price(info["tradingsymbol"])
+                    if opt_premium:
+                        open_trade(side, opt_type, strike, info["tradingsymbol"], spot, opt_premium, trade_type="OPT")
+                    else:
+                        print(f"Live quote unavailable for {info['tradingsymbol']}, skipping OPT trade")
+
+                send_signal_alert(side, spot, strike, opt_type,
+                                  info["tradingsymbol"] if info else "N/A",
+                                  get_live_price(info["tradingsymbol"]) if info else 0)
+                socketio.emit("trade_history", get_trade_history(), namespace="/")
+            except Exception as e:
+                print(f"Paper trade / Telegram error: {e}")
 
     return out
 

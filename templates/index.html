@@ -282,8 +282,11 @@
     let currentPrice = null, prevClose = null;
     let activePosition = null;
     let optSym = null, optEntry = null, optLive = null;
+    let openTrades = [];
     let shouldReset = true;
     let lastTickDate = null;
+    let currentIntervalName = "15minute";
+    let chartReady = false;
 
     // ── Layout ──
     function totalBottom() { return bottomH + DRAG_H; }
@@ -392,6 +395,7 @@
         e.target.classList.add("active");
         currentIntervalName = iv;
         shouldReset = true;
+        chartReady = false;
         socket.emit("change_interval", { interval: iv });
     }
     function switchTab(el) {
@@ -429,11 +433,13 @@
             activePosition = { side: s.signal, entry: s.close, entryTime: fmtHover(s.time) };
         }
         if (shouldReset) { resetView(); shouldReset = false; }
+        chartReady = true;
     });
 
-    socket.on("live_price", d => { currentPrice = d.price; updatePrice(d.price); renderPos(); });
+    socket.on("live_price", d => { currentPrice = d.price; updatePrice(d.price); renderPositions(); });
 
     socket.on("tick_update", d => {
+        if (!chartReady) return;
         if (d.interval !== currentIntervalName) return;
         const c = d.candle;
         candles.update({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close });
@@ -446,14 +452,15 @@
     socket.on("live_option_price", d => {
         if (d.symbol !== optSym) { optSym = d.symbol; optEntry = d.price; }
         optLive = d.price;
-        renderPos();
+        renderPositions();
     });
 
     socket.on("trade_history", trades => {
         renderOrders(trades);
         renderSummary(trades);
         const open = trades.find(t => t.status === "OPEN");
-        open ? renderPosFromDb(open) : renderPos();
+        openTrades = trades.filter(t => t.status === "OPEN");
+        renderPositions();
     });
 
     // ── Price display ──
@@ -469,43 +476,38 @@
     }
 
     // ── Positions ──
-    function renderPosFromDb(t) {
-        const live   = optSym === t.symbol ? optLive : null;
-        const pnlPts = live != null ? (t.side === "BUY" ? live - t.entry_premium : t.entry_premium - live) : null;
-        const pnlInr = pnlPts != null ? pnlPts * LOT : null;
-        const c = pnlPts != null ? col(pnlPts) : "muted";
-
-        setBadge("pos-badge", pnlInr);
-        set("pos-body", `<tr>
-            <td class="bold">${t.symbol}</td>
-            <td class="${t.side === "BUY" ? "up bold" : "dn bold"}">${t.side}</td>
-            <td>${t.strike}</td><td>1 lot</td>
-            <td>${fmt(t.entry_spot)}</td><td class="muted">${t.entry_time}</td>
-            <td>${fmt(t.entry_premium)}</td>
-            <td>${live != null ? fmt(live) : '<span class="muted">--</span>'}</td>
-            <td class="${c} bold">${fmtPts(pnlPts)}</td>
-            <td class="${c} bold">${pnlInr != null ? "₹" + fmtInr(pnlInr) : "--"}</td>
-        </tr>`);
-    }
-
-    function renderPos() {
-        if (!activePosition) {
+    function renderPositions() {
+        if (!openTrades.length) {
             set("pos-body", '<tr><td colspan="10" class="empty">No open positions</td></tr>');
             document.getElementById("pos-badge").textContent = "";
             return;
         }
-        const cur = currentPrice || activePosition.entry;
-        const pnl = activePosition.side === "BUY" ? cur - activePosition.entry : activePosition.entry - cur;
-        set("pos-body", `<tr>
-            <td class="bold">${optSym || "--"}</td>
-            <td class="${activePosition.side === "BUY" ? "up bold" : "dn bold"}">${activePosition.side}</td>
-            <td>--</td><td>1 lot</td>
-            <td>${fmt(activePosition.entry)}</td><td class="muted">${activePosition.entryTime}</td>
-            <td>${optEntry != null ? fmt(optEntry) : "--"}</td>
-            <td>${optLive  != null ? fmt(optLive)  : "--"}</td>
-            <td class="${col(pnl)} bold">${fmtPts(pnl)}</td>
-            <td class="muted">--</td>
-        </tr>`);
+        let totalPnlInr = 0;
+        const rows = openTrades.map(t => {
+            const isFut = t.trade_type === "FUT";
+            const livePrice = isFut ? currentPrice : (optSym === t.symbol ? optLive : null);
+            const pnlPts = livePrice != null
+                ? (t.side === "BUY" ? livePrice - t.entry_premium : t.entry_premium - livePrice)
+                : null;
+            const pnlInr = pnlPts != null ? pnlPts * LOT : null;
+            if (pnlInr != null) totalPnlInr += pnlInr;
+            const c = pnlPts != null ? col(pnlPts) : "muted";
+            const tag = isFut
+                ? '<span style="color:var(--gold);font-size:10px;margin-left:4px">FUT</span>'
+                : '<span style="color:var(--blue);font-size:10px;margin-left:4px">OPT</span>';
+            return `<tr>
+                <td class="bold">${t.symbol}${tag}</td>
+                <td class="${t.side === "BUY" ? "up bold" : "dn bold"}">${t.side}</td>
+                <td>${isFut ? "--" : t.strike}</td><td>1 lot</td>
+                <td>${fmt(t.entry_spot)}</td><td class="muted">${t.entry_time}</td>
+                <td>${fmt(t.entry_premium)}</td>
+                <td>${livePrice != null ? fmt(livePrice) : '<span class="muted">--</span>'}</td>
+                <td class="${c} bold">${fmtPts(pnlPts)}</td>
+                <td class="${c} bold">${pnlInr != null ? "₹" + fmtInr(pnlInr) : "--"}</td>
+            </tr>`;
+        });
+        set("pos-body", rows.join(""));
+        setBadge("pos-badge", totalPnlInr || null);
     }
 
     // ── Orders ──
