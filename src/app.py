@@ -134,7 +134,7 @@ def build_chart_data(interval):
                 if info:
                     opt_premium = get_live_price(info["tradingsymbol"])
                     if opt_premium:
-                        open_trade(side, opt_type, strike, info["tradingsymbol"], spot, opt_premium, trade_type="OPT")
+                        open_trade("BUY", opt_type, strike, info["tradingsymbol"], spot, opt_premium, trade_type="OPT")
                     else:
                         print(f"Live quote unavailable for {info['tradingsymbol']}, skipping OPT trade")
 
