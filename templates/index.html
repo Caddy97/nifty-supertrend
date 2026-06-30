@@ -390,6 +390,7 @@
     function setInterval_(e, iv) {
         document.querySelectorAll(".iv-btn").forEach(b => b.classList.remove("active"));
         e.target.classList.add("active");
+        currentIntervalName = iv;
         shouldReset = true;
         socket.emit("change_interval", { interval: iv });
     }
@@ -431,6 +432,16 @@
     });
 
     socket.on("live_price", d => { currentPrice = d.price; updatePrice(d.price); renderPos(); });
+
+    socket.on("tick_update", d => {
+        if (d.interval !== currentIntervalName) return;
+        const c = d.candle;
+        candles.update({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close });
+        set("ohlc-o", fmt(c.open));
+        set("ohlc-h", fmt(c.high));
+        set("ohlc-l", fmt(c.low));
+        set("ohlc-c", fmt(c.close));
+    });
 
     socket.on("live_option_price", d => {
         if (d.symbol !== optSym) { optSym = d.symbol; optEntry = d.price; }

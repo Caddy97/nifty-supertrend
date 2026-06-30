@@ -122,6 +122,9 @@ active_option_token = None
 active_option_symbol = None
 ws_ref = None
 
+# In-memory forming candle per interval (updated tick by tick)
+_forming = {}   # { "5minute": {time, open, high, low, close}, ... }
+
 def set_active_option(token, symbol):
     """Called when a new option position opens - swaps the live subscription."""
     global active_option_token, active_option_symbol
@@ -137,6 +140,20 @@ def set_active_option(token, symbol):
         ws_ref.set_mode(ws_ref.MODE_FULL, [token])
         print(f"Now tracking live option: {symbol} (token {token})")
 
+def _update_forming(price):
+    ts = int(time.time())
+    for interval, secs in INTERVAL_SECONDS.items():
+        bucket = (ts // secs) * secs
+        cur = _forming.get(interval)
+        if cur is None or cur["time"] != bucket:
+            _forming[interval] = {"time": bucket, "open": price, "high": price, "low": price, "close": price}
+        else:
+            cur["close"] = price
+            cur["high"]  = max(cur["high"], price)
+            cur["low"]   = min(cur["low"],  price)
+        socketio.emit("tick_update", {"interval": interval, "candle": _forming[interval]}, namespace="/")
+
+
 def start_ticker():
     global ws_ref
     kite = get_kite()
@@ -150,7 +167,9 @@ def start_ticker():
             def on_ticks(ws, ticks):
                 for t in ticks:
                     if t["instrument_token"] == NIFTY_TOKEN:
-                        socketio.emit("live_price", {"price": t["last_price"]}, namespace="/")
+                        price = t["last_price"]
+                        socketio.emit("live_price", {"price": price}, namespace="/")
+                        _update_forming(price)
                     elif active_option_token and t["instrument_token"] == active_option_token:
                         socketio.emit("live_option_price", {"price": t["last_price"], "symbol": active_option_symbol}, namespace="/")
 
