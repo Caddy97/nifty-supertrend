@@ -249,9 +249,20 @@ def refresh_chart_cache(interval):
 @socketio.on("connect")
 def handle_connect(auth=None):
     print("Client connected!")
-    refresh_chart_cache(current_interval)  # always get fresh data, never trust a stale cache
+    refresh_chart_cache(current_interval)
     emit("historical_data", _chart_cache.get(current_interval, []))
     emit("trade_history", get_trade_history())
+    # Emit last known option price on connect (shows closing price after hours)
+    if active_option_symbol:
+        try:
+            kite_inst = get_kite()
+            key = f"NFO:{active_option_symbol}"
+            q = kite_inst.quote([key])
+            price = q[key]["last_price"]
+            if price and price > 0:
+                emit("live_option_price", {"price": price, "symbol": active_option_symbol})
+        except Exception:
+            pass
 
 @socketio.on("change_interval")
 def handle_interval(payload):
