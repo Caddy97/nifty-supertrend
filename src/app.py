@@ -16,8 +16,6 @@ from candle_reader import read_candles
 from market_calendar import is_market_open, market_status
 from strike_selector import get_atm_strike
 from option_lookup import get_monthly_option_token
-from black_scholes import black_scholes_price
-from vix_data import get_vix_history, get_vix_on_date
 from telegram_bot import send_signal_alert, send_exit_alert
 from paper_trades import init_db, open_trade, close_open_trade, get_open_trade, get_trade_history
 
@@ -104,23 +102,33 @@ def build_chart_data(interval):
                 last_acted_signal["time"] = last["time"]
                 print(f"New {side} signal -> tracking {info['tradingsymbol']}")
                 try:
-                    from datetime import datetime
-                    from premium_backtest import get_monthly_expiry
-                    vix_df = get_vix_history(period="5d")
-                    vix_pct = get_vix_on_date(vix_df, datetime.now())
-                    vol = (vix_pct / 100.0) if vix_pct else 0.15
-                    expiry = get_monthly_expiry(datetime.now())
-                    dte = (expiry - datetime.now()).days
-                    premium = black_scholes_price(spot, strike, max(dte, 0), vol, opt_type)
+                    kite_inst = get_kite()
+
+                    def get_live_price(tradingsymbol):
+                        try:
+                            key = f"NFO:{tradingsymbol}"
+                            q = kite_inst.quote([key])
+                            price = q[key]["last_price"]
+                            return price if price and price > 0 else None
+                        except Exception as ex:
+                            print(f"Quote failed for {tradingsymbol}: {ex}")
+                            return None
 
                     # Close existing paper trade if signal reversed
                     existing = get_open_trade()
                     if existing and existing["side"] != side:
-                        result = close_open_trade(spot, premium, "signal")
+                        exit_premium = get_live_price(existing["symbol"]) or existing["entry_premium"]
+                        result = close_open_trade(spot, exit_premium, "signal")
                         if result:
                             send_exit_alert(existing["side"], spot, existing["symbol"],
-                                            existing["entry_premium"], premium)
+                                            existing["entry_premium"], exit_premium)
                         socketio.emit("trade_history", get_trade_history(), namespace="/")
+
+                    # Get real entry premium from Kite quote
+                    premium = get_live_price(info["tradingsymbol"])
+                    if premium is None:
+                        print(f"Live quote unavailable for {info['tradingsymbol']}, skipping trade")
+                        return out
 
                     # Open new paper trade
                     open_trade(side, opt_type, strike, info["tradingsymbol"], spot, premium)
