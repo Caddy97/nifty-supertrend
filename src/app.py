@@ -17,7 +17,8 @@ from strike_selector import get_atm_strike
 from option_lookup import get_monthly_option_token
 from black_scholes import black_scholes_price
 from vix_data import get_vix_history, get_vix_on_date
-from telegram_bot import send_signal_alert
+from telegram_bot import send_signal_alert, send_exit_alert
+from paper_trades import init_db, open_trade, close_open_trade, get_open_trade, get_trade_history
 
 load_dotenv()
 API_KEY = os.getenv("KITE_API_KEY")
@@ -90,19 +91,30 @@ def build_chart_data(interval):
                 last_acted_signal["time"] = last["time"]
                 print(f"New {side} signal -> tracking {info['tradingsymbol']}")
                 try:
-                    vix_df = get_vix_history(period="5d")
                     from datetime import datetime
+                    from premium_backtest import get_monthly_expiry
+                    vix_df = get_vix_history(period="5d")
                     vix_pct = get_vix_on_date(vix_df, datetime.now())
                     vol = (vix_pct / 100.0) if vix_pct else 0.15
-                    from contract_specs import LOT_SIZE
-                    from trading_days import trading_days_between
-                    from premium_backtest import get_monthly_expiry
                     expiry = get_monthly_expiry(datetime.now())
                     dte = (expiry - datetime.now()).days
                     premium = black_scholes_price(spot, strike, max(dte, 0), vol, opt_type)
+
+                    # Close existing paper trade if signal reversed
+                    existing = get_open_trade()
+                    if existing and existing["side"] != side:
+                        result = close_open_trade(spot, premium, "signal")
+                        if result:
+                            send_exit_alert(existing["side"], spot, existing["symbol"],
+                                            existing["entry_premium"], premium)
+                        socketio.emit("trade_history", get_trade_history(), namespace="/")
+
+                    # Open new paper trade
+                    open_trade(side, opt_type, strike, info["tradingsymbol"], spot, premium)
                     send_signal_alert(side, spot, strike, opt_type, info["tradingsymbol"], premium)
+                    socketio.emit("trade_history", get_trade_history(), namespace="/")
                 except Exception as e:
-                    print(f"Telegram alert failed: {e}")
+                    print(f"Paper trade / Telegram error: {e}")
 
     return out
 
@@ -191,6 +203,7 @@ def handle_connect(auth=None):
     print("Client connected!")
     refresh_chart_cache(current_interval)  # always get fresh data, never trust a stale cache
     emit("historical_data", _chart_cache.get(current_interval, []))
+    emit("trade_history", get_trade_history())
 
 @socketio.on("change_interval")
 def handle_interval(payload):
@@ -223,6 +236,7 @@ def chart_refresh_loop():
 if __name__ == "__main__":
     print("Authenticating with Kite (one-time, before starting server)...")
     get_kite()
+    init_db()
     print("Pre-warming chart cache before accepting connections...")
     refresh_chart_cache(current_interval)
     print("Cache ready. Starting ticker and server...")
