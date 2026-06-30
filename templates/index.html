@@ -8,35 +8,108 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: #0f1117; color: #e2e8f0; font-family: Segoe UI, sans-serif; }
-        .header { padding: 10px 20px; background: #161b27; border-bottom: 1px solid #2d3748; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-        .header h1 { font-size: 18px; color: #f7c948; }
-        .price { font-size: 22px; font-weight: bold; color: #4ade80; }
-        .intervals { display: flex; gap: 6px; }
-        .btn { padding: 5px 12px; border-radius: 5px; border: 1px solid #2d3748; background: #1e2535; color: #e2e8f0; cursor: pointer; font-size: 12px; }
-        .btn.active { background: #f7c948; color: #0f1117; font-weight: bold; border-color: #f7c948; }
-        .btn:hover { background: #2d3748; }
-        .reset-btn { padding: 5px 12px; border-radius: 5px; border: 1px solid #2d3748; background: #1e2535; color: #e2e8f0; cursor: pointer; font-size: 13px; }
-        .reset-btn:hover { background: #2d3748; }
-        #chart { width: 100%; height: calc(100vh - 60px - 220px); }
-        .positions-panel { background: #161b27; border-top: 1px solid #2d3748; padding: 8px 20px; height: 80px; overflow-y: auto; }
-        .history-panel { background: #0f1117; border-top: 1px solid #2d3748; padding: 6px 20px; height: 140px; overflow-y: auto; }
-        .panel-label { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
-        .positions-panel table, .history-panel table { width: 100%; border-collapse: collapse; }
-        .positions-panel th, .history-panel th { text-align: left; font-size: 11px; color: #94a3b8; padding: 3px 8px; border-bottom: 1px solid #2d3748; }
-        .positions-panel td, .history-panel td { font-size: 12px; padding: 4px 8px; }
-        .side-buy { color: #4ade80; font-weight: bold; }
-        .side-sell { color: #f87171; font-weight: bold; }
-        .pnl-profit { color: #4ade80; font-weight: bold; }
-        .pnl-loss { color: #f87171; font-weight: bold; }
-        .empty-row { color: #64748b; text-align: center; padding: 10px; }
+        body { background: #0f1117; color: #e2e8f0; font-family: Segoe UI, sans-serif; overflow: hidden; }
+
+        /* ── Header ── */
+        .header {
+            height: 52px; padding: 0 20px; background: #161b27;
+            border-bottom: 1px solid #2d3748;
+            display: flex; align-items: center; gap: 16px;
+        }
+        .header h1 { font-size: 16px; color: #f7c948; font-weight: 700; }
+        .live-price { font-size: 22px; font-weight: 700; color: #4ade80; min-width: 100px; }
+        .price-change { font-size: 13px; color: #94a3b8; }
+        .badge {
+            font-size: 11px; padding: 3px 10px; border-radius: 12px;
+            background: #2d3748; color: #94a3b8;
+        }
+        .intervals { display: flex; gap: 5px; margin-left: auto; }
+        .btn {
+            padding: 4px 11px; border-radius: 4px; border: 1px solid #2d3748;
+            background: #1e2535; color: #94a3b8; cursor: pointer; font-size: 12px;
+        }
+        .btn.active { background: #f7c948; color: #0f1117; font-weight: 700; border-color: #f7c948; }
+        .btn:hover:not(.active) { background: #2d3748; color: #e2e8f0; }
+        .reset-btn {
+            padding: 4px 11px; border-radius: 4px; border: 1px solid #2d3748;
+            background: transparent; color: #94a3b8; cursor: pointer; font-size: 12px;
+        }
+        .reset-btn:hover { background: #2d3748; color: #e2e8f0; }
+
+        /* ── Chart ── */
+        #chart { width: 100%; }
+
+        /* ── Bottom panel ── */
+        .bottom-panel { background: #161b27; border-top: 1px solid #2d3748; display: flex; flex-direction: column; }
+
+        /* Tab bar */
+        .tab-bar {
+            display: flex; align-items: stretch; border-bottom: 1px solid #2d3748;
+            background: #0f1117; flex-shrink: 0;
+        }
+        .tab {
+            padding: 0 20px; height: 36px; display: flex; align-items: center; gap: 8px;
+            font-size: 12px; color: #64748b; cursor: pointer; border-bottom: 2px solid transparent;
+            user-select: none;
+        }
+        .tab:hover { color: #e2e8f0; }
+        .tab.active { color: #e2e8f0; border-bottom-color: #f7c948; }
+        .tab .badge-count {
+            background: #2d3748; color: #94a3b8; font-size: 10px;
+            padding: 1px 6px; border-radius: 10px; min-width: 20px; text-align: center;
+        }
+        .tab .pnl-badge { font-size: 11px; font-weight: 700; }
+        .tab .pnl-badge.profit { color: #4ade80; }
+        .tab .pnl-badge.loss { color: #f87171; }
+
+        /* Tab content */
+        .tab-content { flex: 1; overflow-y: auto; }
+        .tab-pane { display: none; height: 100%; }
+        .tab-pane.active { display: block; }
+
+        /* Tables */
+        .data-table { width: 100%; border-collapse: collapse; }
+        .data-table th {
+            text-align: left; font-size: 11px; color: #64748b; font-weight: 500;
+            padding: 6px 12px; border-bottom: 1px solid #1e2535;
+            position: sticky; top: 0; background: #161b27; z-index: 1;
+        }
+        .data-table td { font-size: 12px; padding: 7px 12px; border-bottom: 1px solid #1a2030; }
+        .data-table tr:last-child td { border-bottom: none; }
+        .data-table tr:hover td { background: #1e2535; }
+        .empty-msg { text-align: center; color: #4a5568; padding: 20px; font-size: 12px; }
+
+        /* Colours */
+        .buy  { color: #4ade80; font-weight: 600; }
+        .sell { color: #f87171; font-weight: 600; }
+        .profit { color: #4ade80; font-weight: 600; }
+        .loss   { color: #f87171; font-weight: 600; }
+        .neutral { color: #94a3b8; }
+        .open-badge {
+            background: #1e3a5f; color: #60a5fa; font-size: 10px;
+            padding: 2px 7px; border-radius: 10px; font-weight: 600;
+        }
+
+        /* P&L summary cards */
+        .pnl-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr);
+            gap: 1px; background: #2d3748; height: 100%;
+        }
+        .pnl-card {
+            background: #161b27; padding: 12px 16px;
+            display: flex; flex-direction: column; gap: 4px;
+        }
+        .pnl-card .label { font-size: 11px; color: #64748b; }
+        .pnl-card .value { font-size: 18px; font-weight: 700; }
+        .pnl-card .sub   { font-size: 11px; color: #64748b; }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>NIFTY 50</h1>
-        <span class="price" id="live-price">Loading...</span>
-        <span id="market-status-badge" style="font-size: 11px; padding: 4px 10px; border-radius: 12px; background: #2d3748; color: #94a3b8;">checking...</span>
+        <span class="live-price" id="live-price">--</span>
+        <span class="price-change" id="price-change"></span>
+        <span class="badge" id="market-status-badge">checking...</span>
         <div class="intervals">
             <button class="btn" onclick="changeInterval(event,'5minute')">5m</button>
             <button class="btn active" onclick="changeInterval(event,'15minute')">15m</button>
@@ -44,95 +117,191 @@
         </div>
         <button class="reset-btn" onclick="resetView()">Reset view</button>
     </div>
+
     <div id="chart"></div>
-    <div class="positions-panel">
-        <div class="panel-label">Open Position</div>
-        <table>
-            <thead>
-                <tr><th>Side</th><th>Entry Price</th><th>Entry Time</th><th>Current Price</th><th>Spot P&L</th><th>Option</th><th>Option Premium</th><th>Option P&L</th><th>Status</th></tr>
-            </thead>
-            <tbody id="positions-body">
-                <tr><td colspan="9" class="empty-row">No active position</td></tr>
-            </tbody>
-        </table>
-    </div>
-    <div class="history-panel">
-        <div class="panel-label">Trade Log</div>
-        <table>
-            <thead>
-                <tr><th>Entry Time</th><th>Side</th><th>Symbol</th><th>Entry Spot</th><th>Entry Prem</th><th>Exit Prem</th><th>Exit Time</th><th>Exit Reason</th><th>P&L (pts)</th><th>P&L (₹)</th></tr>
-            </thead>
-            <tbody id="history-body">
-                <tr><td colspan="10" class="empty-row">No trades yet</td></tr>
-            </tbody>
-        </table>
+
+    <div class="bottom-panel" id="bottom-panel">
+        <div class="tab-bar">
+            <div class="tab active" onclick="switchTab('positions')">
+                Positions
+                <span class="pnl-badge" id="pos-pnl-badge"></span>
+            </div>
+            <div class="tab" onclick="switchTab('orders')">
+                Orders
+                <span class="badge-count" id="orders-count">0</span>
+            </div>
+            <div class="tab" onclick="switchTab('pnl')">
+                P&amp;L Summary
+                <span class="pnl-badge" id="total-pnl-badge"></span>
+            </div>
+        </div>
+
+        <div class="tab-content">
+            <!-- POSITIONS -->
+            <div class="tab-pane active" id="tab-positions">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th><th>Side</th><th>Strike</th><th>Qty (lots)</th>
+                            <th>Entry Spot</th><th>Entry Time</th>
+                            <th>Entry Prem</th><th>Live Prem</th>
+                            <th>Unrealised P&amp;L (pts)</th><th>Unrealised P&amp;L (&#8377;)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="positions-body">
+                        <tr><td colspan="10" class="empty-msg">No open positions</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- ORDERS -->
+            <div class="tab-pane" id="tab-orders">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Entry Time</th><th>Side</th><th>Symbol</th>
+                            <th>Entry Spot</th><th>Entry Prem</th>
+                            <th>Exit Prem</th><th>Exit Time</th><th>Exit Reason</th>
+                            <th>P&amp;L (pts)</th><th>P&amp;L (&#8377;)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orders-body">
+                        <tr><td colspan="10" class="empty-msg">No trades yet</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- P&L SUMMARY -->
+            <div class="tab-pane" id="tab-pnl">
+                <div class="pnl-grid">
+                    <div class="pnl-card">
+                        <div class="label">Total P&amp;L</div>
+                        <div class="value" id="stat-total-pnl-inr">--</div>
+                        <div class="sub" id="stat-total-pnl-pts">-- pts</div>
+                    </div>
+                    <div class="pnl-card">
+                        <div class="label">Win Rate</div>
+                        <div class="value" id="stat-winrate">--</div>
+                        <div class="sub" id="stat-wins-losses">-- wins / -- losses</div>
+                    </div>
+                    <div class="pnl-card">
+                        <div class="label">Avg Win</div>
+                        <div class="value profit" id="stat-avg-win">--</div>
+                        <div class="sub" id="stat-avg-win-inr">--</div>
+                    </div>
+                    <div class="pnl-card">
+                        <div class="label">Avg Loss</div>
+                        <div class="value loss" id="stat-avg-loss">--</div>
+                        <div class="sub" id="stat-avg-loss-inr">--</div>
+                    </div>
+                    <div class="pnl-card">
+                        <div class="label">Total Trades</div>
+                        <div class="value" id="stat-total-trades">0</div>
+                        <div class="sub">closed trades</div>
+                    </div>
+                    <div class="pnl-card">
+                        <div class="label">Best Trade</div>
+                        <div class="value profit" id="stat-best">--</div>
+                        <div class="sub" id="stat-best-inr">--</div>
+                    </div>
+                    <div class="pnl-card">
+                        <div class="label">Worst Trade</div>
+                        <div class="value loss" id="stat-worst">--</div>
+                        <div class="sub" id="stat-worst-inr">--</div>
+                    </div>
+                    <div class="pnl-card">
+                        <div class="label">Max Drawdown</div>
+                        <div class="value loss" id="stat-maxdd">--</div>
+                        <div class="sub" id="stat-maxdd-inr">--</div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
+        // ── Layout constants ──
+        const HEADER_H = 52;
+        const BOTTOM_H = 240;
+        const INTERVAL_SECONDS = { "5minute": 300, "15minute": 900, "60minute": 3600 };
+
         let currentPrice = null;
-
+        let prevClose = null;
+        let lastCandle = null;
+        let activePosition = null;
+        let currentIntervalSeconds = 900;
+        let shouldResetView = true;
         let lastTickDate = null;
+        let optionSymbol = null;
+        let optionEntryPremium = null;
+        let optionCurrentPremium = null;
+        let LOT_SIZE = 65;
 
-        function formatAxisTick(time) {
-            const d = new Date(time * 1000);
-            const dayStr = d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" });
-            // Show the date on the first tick of each day, time otherwise
-            const dateKey = d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata" });
-            if (dateKey !== lastTickDate) {
-                lastTickDate = dateKey;
-                return dayStr;
-            }
-            return d.toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
-        }
-
-        function formatHoverTime(time) {
-            const d = new Date(time * 1000);
-            const dateStr = d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" });
-            const timeStr = d.toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
-            return dateStr + " " + timeStr;
-        }
-
-        const HEADER_H = 60;
-        const POSITIONS_H = 220;
+        // ── Chart setup ──
+        function chartHeight() { return window.innerHeight - HEADER_H - BOTTOM_H; }
 
         const chart = LightweightCharts.createChart(document.getElementById("chart"), {
             layout: { backgroundColor: "#0f1117", textColor: "#e2e8f0" },
             grid: { vertLines: { color: "#1e2535" }, horzLines: { color: "#1e2535" } },
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
             timeScale: {
-                borderColor: "#2d3748",
-                timeVisible: true,
-                secondsVisible: false,
-                tickMarkFormatter: (time) => formatAxisTick(time)
+                borderColor: "#2d3748", timeVisible: true, secondsVisible: false,
+                tickMarkFormatter: (t) => formatAxisTick(t)
             },
-            localization: {
-                timeFormatter: (time) => formatHoverTime(time)
-            },
+            localization: { timeFormatter: (t) => formatHoverTime(t) },
             width: document.getElementById("chart").clientWidth,
-            height: window.innerHeight - HEADER_H - POSITIONS_H,
+            height: chartHeight(),
         });
+
+        document.getElementById("chart").style.height = chartHeight() + "px";
+        document.getElementById("bottom-panel").style.height = BOTTOM_H + "px";
 
         const candleSeries = chart.addCandlestickSeries({
             upColor: "#4ade80", downColor: "#f87171",
             borderUpColor: "#4ade80", borderDownColor: "#f87171",
             wickUpColor: "#4ade80", wickDownColor: "#f87171",
         });
-
         const supertrendSeries = chart.addLineSeries({
             color: "#a78bfa", lineWidth: 2, title: "Supertrend",
         });
 
-        const socket = io();
+        window.addEventListener("resize", () => {
+            chart.resize(document.getElementById("chart").clientWidth, chartHeight());
+            document.getElementById("chart").style.height = chartHeight() + "px";
+        });
 
+        // ── Tab switching ──
+        function switchTab(name) {
+            document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+            document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
+            event.currentTarget.classList.add("active");
+            document.getElementById("tab-" + name).classList.add("active");
+        }
+
+        // ── Time formatters ──
+        function formatAxisTick(time) {
+            const d = new Date(time * 1000);
+            const dateKey = d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata" });
+            if (dateKey !== lastTickDate) {
+                lastTickDate = dateKey;
+                return d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" });
+            }
+            return d.toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+        }
+        function formatHoverTime(time) {
+            const d = new Date(time * 1000);
+            return d.toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" })
+                + "  " + d.toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+        }
+
+        // ── Market status ──
         function updateMarketStatus() {
-            fetch("/api/market_status")
-                .then(r => r.json())
-                .then(d => {
-                    const badge = document.getElementById("market-status-badge");
-                    badge.textContent = d.is_open ? "● MARKET OPEN" : "○ " + d.status.toUpperCase();
-                    badge.style.background = d.is_open ? "#14532d" : "#2d3748";
-                    badge.style.color = d.is_open ? "#4ade80" : "#94a3b8";
-                });
+            fetch("/api/market_status").then(r => r.json()).then(d => {
+                const b = document.getElementById("market-status-badge");
+                b.textContent = d.is_open ? "● MARKET OPEN" : "○ " + d.status.toUpperCase();
+                b.style.background = d.is_open ? "#14532d" : "#2d3748";
+                b.style.color = d.is_open ? "#4ade80" : "#94a3b8";
+            });
         }
         updateMarketStatus();
         setInterval(updateMarketStatus, 60000);
@@ -141,157 +310,217 @@
             chart.timeScale().resetTimeScale();
             chart.timeScale().scrollToRealTime();
         }
-
         function changeInterval(e, interval) {
             document.querySelectorAll(".intervals .btn").forEach(b => b.classList.remove("active"));
             e.target.classList.add("active");
             currentIntervalSeconds = INTERVAL_SECONDS[interval] || 900;
-            currentIntervalName = interval;
             shouldResetView = true;
-            socket.emit("change_interval", { interval: interval });
+            socket.emit("change_interval", { interval });
         }
+
+        // ── Socket ──
+        const socket = io();
 
         socket.on("historical_data", (data) => {
             if (!data || data.length === 0) return;
-
             candleSeries.setData(data);
-            const stData = data.filter(d => d.supertrend !== null).map(d => ({ time: d.time, value: d.supertrend }));
-            supertrendSeries.setData(stData);
+            supertrendSeries.setData(data.filter(d => d.supertrend !== null).map(d => ({ time: d.time, value: d.supertrend })));
 
             const markers = [];
             data.forEach(d => {
-                if (d.signal === "BUY") {
-                    markers.push({ time: d.time, position: "belowBar", color: "#4ade80", shape: "arrowUp", text: "BUY" });
-                } else if (d.signal === "SELL") {
-                    markers.push({ time: d.time, position: "aboveBar", color: "#f87171", shape: "arrowDown", text: "SELL" });
-                }
+                if (d.signal === "BUY")  markers.push({ time: d.time, position: "belowBar", color: "#4ade80", shape: "arrowUp",   text: "BUY"  });
+                if (d.signal === "SELL") markers.push({ time: d.time, position: "aboveBar", color: "#f87171", shape: "arrowDown", text: "SELL" });
             });
             candleSeries.setMarkers(markers);
 
             const last = data[data.length - 1];
             currentPrice = last.close;
-            lastCandle = { time: last.time, open: last.open, high: last.high, low: last.low, close: last.close };
-            document.getElementById("live-price").textContent = last.close.toLocaleString();
+            updatePriceDisplay(last.close);
 
-            // Find the most recent signal and open a position from it
-            const signalCandles = data.filter(d => d.signal);
-            if (signalCandles.length > 0) {
-                const lastSignal = signalCandles[signalCandles.length - 1];
-                const t = new Date(lastSignal.time * 1000).toLocaleString();
-                openPosition(lastSignal.signal, lastSignal.close, t);
+            const signals = data.filter(d => d.signal);
+            if (signals.length > 0) {
+                const s = signals[signals.length - 1];
+                activePosition = { side: s.signal, entry: s.close, entryTime: new Date(s.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) };
             }
-            renderPosition();
 
-            if (shouldResetView) {
-                resetView();
-                shouldResetView = false;
-            }
+            if (shouldResetView) { resetView(); shouldResetView = false; }
         });
 
-        let lastCandle = null;
-        let activePosition = null;  // { side, entry, entryTime }
-        let currentIntervalSeconds = 900;  // 15min default, updated on interval change
-        let currentIntervalName = "15minute";
-        let shouldResetView = true;  // reset on first load and on explicit interval change
-
-        const INTERVAL_SECONDS = { "5minute": 300, "15minute": 900, "60minute": 3600 };
-
-        function getCandleBucket(unixTime) {
-            return Math.floor(unixTime / currentIntervalSeconds) * currentIntervalSeconds;
-        }
-
-        let optionSymbol = null;
-        let optionEntryPremium = null;
-        let optionCurrentPremium = null;
-
-        function renderPosition() {
-            const body = document.getElementById("positions-body");
-            if (!activePosition) {
-                body.innerHTML = '<tr><td colspan="9" class="empty-row">No active position</td></tr>';
-                return;
-            }
-            const cur = currentPrice || activePosition.entry;
-            const pnl = activePosition.side === "BUY" ? (cur - activePosition.entry) : (activePosition.entry - cur);
-            const pnlClass = pnl >= 0 ? "pnl-profit" : "pnl-loss";
-            const sideClass = activePosition.side === "BUY" ? "side-buy" : "side-sell";
-
-            let optPnlCell = "--";
-            let optPremCell = "--";
-            let optSymCell = optionSymbol || "--";
-            if (optionEntryPremium !== null && optionCurrentPremium !== null) {
-                const optPnl = optionCurrentPremium - optionEntryPremium;  // long option always: current - entry
-                const optClass = optPnl >= 0 ? "pnl-profit" : "pnl-loss";
-                optPnlCell = `<span class="${optClass}">${optPnl >= 0 ? "+" : ""}${optPnl.toFixed(2)} pts</span>`;
-                optPremCell = `${optionEntryPremium.toFixed(2)} -> ${optionCurrentPremium.toFixed(2)}`;
-            }
-
-            body.innerHTML = `<tr>
-                <td class="${sideClass}">${activePosition.side}</td>
-                <td>${activePosition.entry.toLocaleString()}</td>
-                <td>${activePosition.entryTime}</td>
-                <td>${cur.toLocaleString()}</td>
-                <td class="${pnlClass}">${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)} pts</td>
-                <td>${optSymCell}</td>
-                <td>${optPremCell}</td>
-                <td>${optPnlCell}</td>
-                <td>OPEN (real premium)</td>
-            </tr>`;
-        }
+        socket.on("live_price", (data) => {
+            currentPrice = data.price;
+            updatePriceDisplay(data.price);
+            renderPositions();
+        });
 
         socket.on("live_option_price", (data) => {
             if (data.symbol !== optionSymbol) {
-                // new option contract started tracking - reset entry premium
                 optionSymbol = data.symbol;
                 optionEntryPremium = data.price;
             }
             optionCurrentPremium = data.price;
-            renderPosition();
-        });
-
-        function openPosition(side, price, time) {
-            activePosition = { side: side, entry: price, entryTime: time };
-            renderPosition();
-        }
-
-
-        socket.on("live_price", (data) => {
-            currentPrice = data.price;
-            document.getElementById("live-price").textContent = data.price.toLocaleString();
-            renderPosition();
+            renderPositions();
         });
 
         socket.on("trade_history", (trades) => {
-            const body = document.getElementById("history-body");
-            if (!trades || trades.length === 0) {
-                body.innerHTML = '<tr><td colspan="10" class="empty-row">No trades yet</td></tr>';
+            renderOrders(trades);
+            renderPnlSummary(trades);
+            const open = trades.find(t => t.status === "OPEN");
+            if (open) renderPositionFromDb(open);
+            else renderPositions();
+        });
+
+        // ── Price display ──
+        function updatePriceDisplay(price) {
+            document.getElementById("live-price").textContent = price.toLocaleString("en-IN");
+            if (prevClose && prevClose !== price) {
+                const chg = price - prevClose;
+                const pct = (chg / prevClose) * 100;
+                const el = document.getElementById("price-change");
+                el.textContent = `${chg >= 0 ? "+" : ""}${chg.toFixed(2)}  (${pct.toFixed(2)}%)`;
+                el.className = "price-change " + (chg >= 0 ? "profit" : "loss");
+                document.getElementById("live-price").style.color = chg >= 0 ? "#4ade80" : "#f87171";
+            }
+        }
+
+        // ── Positions tab ──
+        function renderPositionFromDb(open) {
+            const livePrem = optionSymbol === open.symbol ? optionCurrentPremium : null;
+            const entryPrem = open.entry_premium;
+            const unrealisedPts = livePrem !== null ? (open.side === "BUY" ? livePrem - entryPrem : entryPrem - livePrem) : null;
+            const unrealisedInr = unrealisedPts !== null ? unrealisedPts * LOT_SIZE : null;
+            const pnlClass = unrealisedPts === null ? "neutral" : (unrealisedPts >= 0 ? "profit" : "loss");
+
+            const pnlPts  = unrealisedPts  !== null ? `<span class="${pnlClass}">${unrealisedPts >= 0 ? "+" : ""}${unrealisedPts.toFixed(2)}</span>` : "<span class='neutral'>--</span>";
+            const pnlInr  = unrealisedInr  !== null ? `<span class="${pnlClass}">${unrealisedInr >= 0 ? "+" : ""}${Math.round(unrealisedInr).toLocaleString("en-IN")}</span>` : "<span class='neutral'>--</span>";
+            const livePremCell = livePrem !== null ? livePrem.toFixed(2) : "<span class='neutral'>--</span>";
+
+            // Update Positions tab badge
+            if (unrealisedInr !== null) {
+                const b = document.getElementById("pos-pnl-badge");
+                b.textContent = (unrealisedInr >= 0 ? "+" : "") + Math.round(unrealisedInr).toLocaleString("en-IN");
+                b.className = "pnl-badge " + (unrealisedInr >= 0 ? "profit" : "loss");
+            }
+
+            document.getElementById("positions-body").innerHTML = `<tr>
+                <td>${open.symbol}</td>
+                <td class="${open.side === "BUY" ? "buy" : "sell"}">${open.side}</td>
+                <td>${open.strike}</td>
+                <td>1</td>
+                <td>${open.entry_spot.toLocaleString("en-IN")}</td>
+                <td>${open.entry_time}</td>
+                <td>${entryPrem.toFixed(2)}</td>
+                <td>${livePremCell}</td>
+                <td>${pnlPts}</td>
+                <td>${pnlInr}</td>
+            </tr>`;
+        }
+
+        function renderPositions() {
+            if (!activePosition) {
+                document.getElementById("positions-body").innerHTML = '<tr><td colspan="10" class="empty-msg">No open positions</td></tr>';
+                document.getElementById("pos-pnl-badge").textContent = "";
                 return;
             }
-            body.innerHTML = trades.map(t => {
-                const sideClass = t.side === "BUY" ? "side-buy" : "side-sell";
-                const pnlClass = t.pnl_points >= 0 ? "pnl-profit" : "pnl-loss";
-                const pnlPts = t.pnl_points != null ? `<span class="${pnlClass}">${t.pnl_points >= 0 ? "+" : ""}${t.pnl_points.toFixed(2)}</span>` : "--";
-                const pnlInr = t.pnl_rupees != null ? `<span class="${pnlClass}">${t.pnl_rupees >= 0 ? "+" : ""}${t.pnl_rupees.toLocaleString("en-IN", {maximumFractionDigits: 0})}</span>` : "--";
-                const exitPrem = t.exit_premium != null ? t.exit_premium.toFixed(2) : "--";
-                const exitTime = t.exit_time || "--";
-                const exitReason = t.exit_reason || (t.status === "OPEN" ? "<b>OPEN</b>" : "--");
+            const spotPnl = activePosition.side === "BUY"
+                ? (currentPrice || activePosition.entry) - activePosition.entry
+                : activePosition.entry - (currentPrice || activePosition.entry);
+            const pnlClass = spotPnl >= 0 ? "profit" : "loss";
+            document.getElementById("positions-body").innerHTML = `<tr>
+                <td>${optionSymbol || "--"}</td>
+                <td class="${activePosition.side === "BUY" ? "buy" : "sell"}">${activePosition.side}</td>
+                <td>--</td><td>1</td>
+                <td>${activePosition.entry.toLocaleString("en-IN")}</td>
+                <td>${activePosition.entryTime}</td>
+                <td>${optionEntryPremium !== null ? optionEntryPremium.toFixed(2) : "--"}</td>
+                <td>${optionCurrentPremium !== null ? optionCurrentPremium.toFixed(2) : "--"}</td>
+                <td class="${pnlClass}">${spotPnl >= 0 ? "+" : ""}${spotPnl.toFixed(2)}</td>
+                <td>--</td>
+            </tr>`;
+        }
+
+        // ── Orders tab ──
+        function renderOrders(trades) {
+            document.getElementById("orders-count").textContent = trades.length;
+            if (!trades.length) {
+                document.getElementById("orders-body").innerHTML = '<tr><td colspan="10" class="empty-msg">No trades yet</td></tr>';
+                return;
+            }
+            document.getElementById("orders-body").innerHTML = trades.map(t => {
+                const sideClass = t.side === "BUY" ? "buy" : "sell";
+                const isOpen = t.status === "OPEN";
+                const pnlPts = !isOpen && t.pnl_points != null
+                    ? `<span class="${t.pnl_points >= 0 ? "profit" : "loss"}">${t.pnl_points >= 0 ? "+" : ""}${t.pnl_points.toFixed(2)}</span>` : "--";
+                const pnlInr = !isOpen && t.pnl_rupees != null
+                    ? `<span class="${t.pnl_rupees >= 0 ? "profit" : "loss"}">${t.pnl_rupees >= 0 ? "+" : ""}${Math.round(t.pnl_rupees).toLocaleString("en-IN")}</span>` : "--";
+                const exitReason = isOpen
+                    ? `<span class="open-badge">OPEN</span>`
+                    : (t.exit_reason || "--");
                 return `<tr>
                     <td>${t.entry_time}</td>
                     <td class="${sideClass}">${t.side}</td>
                     <td>${t.symbol}</td>
-                    <td>${t.entry_spot.toLocaleString()}</td>
+                    <td>${t.entry_spot.toLocaleString("en-IN")}</td>
                     <td>${t.entry_premium.toFixed(2)}</td>
-                    <td>${exitPrem}</td>
-                    <td>${exitTime}</td>
+                    <td>${t.exit_premium != null ? t.exit_premium.toFixed(2) : "--"}</td>
+                    <td>${t.exit_time || "--"}</td>
                     <td>${exitReason}</td>
                     <td>${pnlPts}</td>
                     <td>${pnlInr}</td>
                 </tr>`;
             }).join("");
-        });
+        }
 
-        window.addEventListener("resize", () => {
-            chart.resize(document.getElementById("chart").clientWidth, window.innerHeight - HEADER_H - POSITIONS_H);
-        });
+        // ── P&L Summary tab ──
+        function renderPnlSummary(trades) {
+            const closed = trades.filter(t => t.status === "CLOSED" && t.pnl_points != null);
+            if (!closed.length) return;
+
+            const totalPts = closed.reduce((s, t) => s + t.pnl_points, 0);
+            const totalInr = closed.reduce((s, t) => s + t.pnl_rupees, 0);
+            const wins   = closed.filter(t => t.pnl_points > 0);
+            const losses = closed.filter(t => t.pnl_points <= 0);
+            const winRate = (wins.length / closed.length * 100).toFixed(1);
+            const avgWinPts  = wins.length   ? wins.reduce((s,t)=>s+t.pnl_points,0)/wins.length : 0;
+            const avgLossPts = losses.length ? losses.reduce((s,t)=>s+t.pnl_points,0)/losses.length : 0;
+            const avgWinInr  = avgWinPts  * LOT_SIZE;
+            const avgLossInr = avgLossPts * LOT_SIZE;
+            const bestPts  = Math.max(...closed.map(t=>t.pnl_points));
+            const worstPts = Math.min(...closed.map(t=>t.pnl_points));
+
+            // Max drawdown
+            let equity=0, peak=0, maxDd=0;
+            [...closed].reverse().forEach(t => {
+                equity += t.pnl_points;
+                peak = Math.max(peak, equity);
+                maxDd = Math.max(maxDd, peak - equity);
+            });
+
+            const totClass = totalPts >= 0 ? "profit" : "loss";
+            setText("stat-total-pnl-inr", `<span class="${totClass}">${totalInr >= 0 ? "+" : ""}${Math.round(totalInr).toLocaleString("en-IN")}</span>`);
+            setText("stat-total-pnl-pts",  `${totalPts >= 0 ? "+" : ""}${totalPts.toFixed(2)} pts`);
+            setText("stat-winrate",  `<span class="profit">${winRate}%</span>`);
+            setText("stat-wins-losses", `${wins.length} wins / ${losses.length} losses`);
+            setText("stat-avg-win",  `+${avgWinPts.toFixed(2)} pts`);
+            setText("stat-avg-win-inr",  `+₹${Math.round(avgWinInr).toLocaleString("en-IN")}`);
+            setText("stat-avg-loss", `${avgLossPts.toFixed(2)} pts`);
+            setText("stat-avg-loss-inr", `₹${Math.round(avgLossInr).toLocaleString("en-IN")}`);
+            setText("stat-total-trades", closed.length);
+            setText("stat-best",  `+${bestPts.toFixed(2)} pts`);
+            setText("stat-best-inr",  `+₹${Math.round(bestPts * LOT_SIZE).toLocaleString("en-IN")}`);
+            setText("stat-worst", `${worstPts.toFixed(2)} pts`);
+            setText("stat-worst-inr", `₹${Math.round(worstPts * LOT_SIZE).toLocaleString("en-IN")}`);
+            setText("stat-maxdd",  `-${maxDd.toFixed(2)} pts`);
+            setText("stat-maxdd-inr", `-₹${Math.round(maxDd * LOT_SIZE).toLocaleString("en-IN")}`);
+
+            // Header badge
+            const b = document.getElementById("total-pnl-badge");
+            b.textContent = (totalInr >= 0 ? "+" : "") + Math.round(totalInr).toLocaleString("en-IN");
+            b.className = "pnl-badge " + (totalInr >= 0 ? "profit" : "loss");
+        }
+
+        function setText(id, html) {
+            document.getElementById(id).innerHTML = html;
+        }
     </script>
 </body>
 </html>
