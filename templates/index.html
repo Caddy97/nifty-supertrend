@@ -65,7 +65,23 @@
         }
 
         /* ── Chart ── */
-        #chart { width: 100%; flex-shrink: 0; }
+        #chart-wrap { position: relative; flex-shrink: 0; }
+        #chart { width: 100%; }
+        #draw-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; overflow: visible;
+        }
+        #draw-layer.armed { pointer-events: all; cursor: crosshair; }
+
+        /* Drawing toolbar */
+        .draw-group { display: flex; gap: 2px; }
+        .draw-btn {
+            padding: 3px 9px; border-radius: 3px; border: 1px solid var(--border);
+            background: transparent; color: var(--muted); cursor: pointer;
+            font-size: 12px; font-family: inherit; line-height: 1.6;
+        }
+        .draw-btn:hover { background: var(--hover); color: var(--text); }
+        .draw-btn.active { background: var(--gold); color: #131722; border-color: var(--gold); font-weight: 700; }
 
         /* ── Drag handle ── */
         #drag-handle {
@@ -172,11 +188,21 @@
             </div>
             <div class="tb-sep"></div>
             <button class="icon-btn" onclick="resetView()">Reset</button>
+            <div class="tb-sep"></div>
+            <div class="draw-group">
+                <button class="draw-btn active" id="tool-cursor"    onclick="setTool('cursor')"    title="Cursor (Esc)">&#9654;</button>
+                <button class="draw-btn"         id="tool-trendline" onclick="setTool('trendline')" title="Trend Line">/&#8212;</button>
+                <button class="draw-btn"         id="tool-fibo"      onclick="setTool('fibo')"      title="Fibonacci Retracement">Fib</button>
+                <button class="draw-btn"         id="tool-del"       onclick="deleteLast()"         title="Delete last (Del)">&#10005;</button>
+            </div>
         </div>
     </div>
 
-    <!-- Chart -->
-    <div id="chart"></div>
+    <!-- Chart + drawing overlay -->
+    <div id="chart-wrap">
+        <div id="chart"></div>
+        <svg id="draw-layer"></svg>
+    </div>
 
     <!-- Drag handle -->
     <div id="drag-handle"></div>
@@ -264,9 +290,20 @@
     function chartH() { return window.innerHeight - HEADER_H - DRAG_H - bottomH; }
 
     function applyLayout() {
-        document.getElementById("chart").style.height = chartH() + "px";
+        const h = chartH();
+        document.getElementById("chart").style.height = h + "px";
+        document.getElementById("chart-wrap").style.height = h + "px";
         document.getElementById("bottom").style.height = bottomH + "px";
-        chart.resize(document.getElementById("chart").clientWidth, chartH());
+        chart.resize(document.getElementById("chart").clientWidth, h);
+        syncSvgSize();
+        redrawAll();
+    }
+
+    function syncSvgSize() {
+        const wrap = document.getElementById("chart-wrap");
+        const svg  = document.getElementById("draw-layer");
+        svg.setAttribute("width",  wrap.clientWidth);
+        svg.setAttribute("height", wrap.clientHeight);
     }
 
     // ── Drag to resize ──
@@ -295,6 +332,7 @@
         height: chartH(),
     });
     document.getElementById("chart").style.height = chartH() + "px";
+    document.getElementById("chart-wrap").style.height = chartH() + "px";
     document.getElementById("bottom").style.height = bottomH + "px";
 
     const candles = chart.addCandlestickSeries({
@@ -516,6 +554,177 @@
         set("s-dd-inr",     `-₹${fmtInr(dd * LOT)}`);
         setBadge("summary-badge", totInr);
     }
+
+    // ── Drawing Tools ──────────────────────────────────────────
+    const FIBO_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0];
+    const FIBO_COLORS = ["#787b86","#26a69a","#4caf50","#f7c948","#ef9a3a","#ef5350","#787b86"];
+    const FIBO_LABELS = ["0%","23.6%","38.2%","50%","61.8%","78.6%","100%"];
+
+    let activeTool = "cursor";
+    let drawings   = [];
+    let curDraw    = null;
+
+    function setTool(tool) {
+        activeTool = tool;
+        document.querySelectorAll(".draw-btn").forEach(b => b.classList.remove("active"));
+        const el = document.getElementById("tool-" + tool);
+        if (el) el.classList.add("active");
+        const layer = document.getElementById("draw-layer");
+        tool === "cursor" ? layer.classList.remove("armed") : layer.classList.add("armed");
+        curDraw = null;
+        redrawAll();
+    }
+
+    document.addEventListener("keydown", e => {
+        if (e.key === "Escape") setTool("cursor");
+        if (e.key === "Delete" || e.key === "Backspace") deleteLast();
+    });
+
+    function deleteLast() {
+        if (curDraw) { curDraw = null; }
+        else { drawings.pop(); }
+        redrawAll();
+    }
+
+    const drawLayer = document.getElementById("draw-layer");
+
+    drawLayer.addEventListener("mousedown", e => {
+        if (activeTool === "cursor") return;
+        const pos   = layerXY(e);
+        const price = candles.coordinateToPrice(pos.y);
+        const time  = chart.timeScale().coordinateToTime(pos.x);
+        if (price == null || time == null) return;
+
+        if (!curDraw) {
+            curDraw = { tool: activeTool, p1: { price, time }, p2: null };
+        } else {
+            curDraw.p2 = { price, time };
+            drawings.push({ ...curDraw });
+            curDraw = null;
+            redrawAll();
+        }
+    });
+
+    drawLayer.addEventListener("mousemove", e => {
+        if (!curDraw) return;
+        const pos   = layerXY(e);
+        const price = candles.coordinateToPrice(pos.y);
+        const time  = chart.timeScale().coordinateToTime(pos.x);
+        if (price == null || time == null) return;
+        curDraw.p2 = { price, time };
+        redrawAll();
+    });
+
+    drawLayer.addEventListener("contextmenu", e => {
+        e.preventDefault();
+        curDraw = null;
+        redrawAll();
+    });
+
+    function layerXY(e) {
+        const r = drawLayer.getBoundingClientRect();
+        return { x: e.clientX - r.left, y: e.clientY - r.top };
+    }
+
+    function px(time) { return chart.timeScale().timeToCoordinate(time); }
+    function py(price) { return candles.priceToCoordinate(price); }
+
+    function redrawAll() {
+        const svg = document.getElementById("draw-layer");
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
+        syncSvgSize();
+        const W = parseFloat(svg.getAttribute("width"));
+        const H = parseFloat(svg.getAttribute("height"));
+        const all = curDraw && curDraw.p2 ? [...drawings, curDraw] : [...drawings];
+        all.forEach(d => {
+            if (!d.p2) return;
+            if (d.tool === "trendline") drawTrendLine(svg, d, W, H, d === curDraw);
+            if (d.tool === "fibo")      drawFibo(svg, d, W, d === curDraw);
+        });
+    }
+
+    function drawTrendLine(svg, d, W, H, preview) {
+        const x1 = px(d.p1.time), y1 = py(d.p1.price);
+        const x2 = px(d.p2.time), y2 = py(d.p2.price);
+        if (x1==null||y1==null||x2==null||y2==null) return;
+
+        // Extend across full chart width
+        let ex1=x1, ey1=y1, ex2=x2, ey2=y2;
+        if (x1 !== x2) {
+            const slope = (y2-y1)/(x2-x1);
+            ey1 = y1 + slope*(0-x1);   ex1 = 0;
+            ey2 = y1 + slope*(W-x1);   ex2 = W;
+        }
+
+        svgEl(svg, "line", { x1:ex1, y1:ey1, x2:ex2, y2:ey2,
+            stroke:"#f7c948", "stroke-width":1.5,
+            "stroke-dasharray": preview ? "6,4" : "none" });
+
+        [{ x:x1,y:y1 },{ x:x2,y:y2 }].forEach(pt =>
+            svgEl(svg, "circle", { cx:pt.x, cy:pt.y, r:4, fill:"#f7c948" }));
+
+        label(svg, Math.min(ex2, W-70), ey2-6, fmt(d.p2.price), "#f7c948");
+    }
+
+    function drawFibo(svg, d, W, preview) {
+        const hi = Math.max(d.p1.price, d.p2.price);
+        const lo = Math.min(d.p1.price, d.p2.price);
+        const range = hi - lo;
+        const x1 = px(d.p1.time), x2 = px(d.p2.time);
+        if (x1==null||x2==null) return;
+        const lx = Math.min(x1, x2);
+        const rx = W - 80;
+
+        FIBO_LEVELS.forEach((lvl, i) => {
+            const price = hi - range * lvl;
+            const y = py(price);
+            if (y == null) return;
+
+            // Shaded band
+            if (i < FIBO_LEVELS.length - 1) {
+                const ny = py(hi - range * FIBO_LEVELS[i+1]);
+                if (ny != null) {
+                    svgEl(svg, "rect", { x:lx, y:Math.min(y,ny), width:rx-lx,
+                        height:Math.abs(ny-y), fill:FIBO_COLORS[i], opacity:0.07 });
+                }
+            }
+
+            svgEl(svg, "line", { x1:lx, y1:y, x2:rx, y2:y,
+                stroke: FIBO_COLORS[i],
+                "stroke-width": (lvl===0||lvl===1) ? 1.5 : 1,
+                "stroke-dasharray": preview ? "5,4" : "none" });
+
+            label(svg, rx+4, y-4, `${FIBO_LABELS[i]}  ${fmt(price)}`, FIBO_COLORS[i]);
+        });
+
+        [[x1, py(d.p1.price)],[x2, py(d.p2.price)]].forEach(([cx,cy]) => {
+            if (cx==null||cy==null) return;
+            svgEl(svg, "circle", { cx, cy, r:4, fill:"#787b86" });
+        });
+    }
+
+    function svgEl(parent, tag, attrs) {
+        const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+        Object.entries(attrs).forEach(([k,v]) => el.setAttribute(k, v));
+        parent.appendChild(el);
+        return el;
+    }
+
+    function label(svg, x, y, text, color) {
+        const t = svgEl(svg, "text", {
+            x, y, fill: color, "font-size": 11,
+            "font-family": "-apple-system, BlinkMacSystemFont, sans-serif",
+            "font-variant-numeric": "tabular-nums"
+        });
+        t.textContent = text;
+    }
+
+    // Redraw whenever chart view changes
+    chart.timeScale().subscribeVisibleTimeRangeChange(redrawAll);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(redrawAll);
+    chart.subscribeCrosshairMove(redrawAll);
+
+    // ── End Drawing Tools ───────────────────────────────────────
 
     function setBadge(id, inr) {
         const el = document.getElementById(id);
