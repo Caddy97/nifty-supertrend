@@ -253,16 +253,18 @@ def handle_connect(auth=None):
     emit("historical_data", _chart_cache.get(current_interval, []))
     emit("trade_history", get_trade_history())
     # Emit last known option price on connect (shows closing price after hours)
-    if active_option_symbol:
-        try:
+    try:
+        opt_trades = [t for t in get_open_trades() if t.get("trade_type") == "OPT"]
+        sym = active_option_symbol or (opt_trades[0]["symbol"] if opt_trades else None)
+        if sym:
             kite_inst = get_kite()
-            key = f"NFO:{active_option_symbol}"
+            key = f"NFO:{sym}"
             q = kite_inst.quote([key])
             price = q[key]["last_price"]
             if price and price > 0:
-                emit("live_option_price", {"price": price, "symbol": active_option_symbol})
-        except Exception:
-            pass
+                emit("live_option_price", {"price": price, "symbol": sym})
+    except Exception:
+        pass
 
 @socketio.on("change_interval")
 def handle_interval(payload):
