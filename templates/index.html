@@ -148,6 +148,15 @@
             font-weight: 600; border: 1px solid #1e4a7a;
         }
 
+        /* ── Summary filter buttons ── */
+        .sum-btn {
+            padding: 3px 10px; border-radius: 3px; border: none;
+            background: transparent; color: var(--muted); cursor: pointer; font-size: 12px;
+            font-family: inherit;
+        }
+        .sum-btn:hover  { background: var(--hover); color: var(--text); }
+        .sum-btn.active { background: var(--blue); color: #fff; font-weight: 700; }
+
         /* ── P&L Summary grid ── */
         .stat-grid {
             display: grid; grid-template-columns: repeat(4, 1fr);
@@ -262,6 +271,11 @@
 
             <!-- P&L SUMMARY -->
             <div class="pane" id="pane-summary">
+                <div style="display:flex;gap:6px;padding:10px 14px 0">
+                    <button class="sum-btn active" data-filter="ALL" onclick="setSumFilter(this)">All</button>
+                    <button class="sum-btn" data-filter="FUT" onclick="setSumFilter(this)">Futures</button>
+                    <button class="sum-btn" data-filter="OPT" onclick="setSumFilter(this)">Options</button>
+                </div>
                 <div class="stat-grid">
                     <div class="stat-card"><div class="lbl">Total P&amp;L</div><div class="val" id="s-total-inr">--</div><div class="sub" id="s-total-pts">-- pts</div></div>
                     <div class="stat-card"><div class="lbl">Win Rate</div><div class="val up" id="s-winrate">--</div><div class="sub" id="s-wl">-- W / -- L</div></div>
@@ -294,6 +308,8 @@
     let lastTickDate = null;
     let currentIntervalName = "15minute";
     let chartReady = false;
+    let summaryFilter = "ALL";
+    let allTrades = [];
 
     // ── Layout ──
     function totalBottom() { return bottomH + DRAG_H; }
@@ -463,9 +479,9 @@
     });
 
     socket.on("trade_history", trades => {
+        allTrades = trades;
         renderOrders(trades);
         renderSummary(trades);
-        const open = trades.find(t => t.status === "OPEN");
         openTrades = trades.filter(t => t.status === "OPEN");
         renderPositions();
     });
@@ -551,8 +567,16 @@
     }
 
     // ── P&L Summary ──
+    function setSumFilter(el) {
+        summaryFilter = el.getAttribute("data-filter");
+        document.querySelectorAll(".sum-btn").forEach(b => b.classList.remove("active"));
+        el.classList.add("active");
+        renderSummary(allTrades);
+    }
+
     function renderSummary(trades) {
-        const closed = trades.filter(t => t.status === "CLOSED" && t.pnl_points != null);
+        let closed = trades.filter(t => t.status === "CLOSED" && t.pnl_points != null);
+        if (summaryFilter !== "ALL") closed = closed.filter(t => t.trade_type === summaryFilter);
         if (!closed.length) return;
         const totPts = closed.reduce((s,t)=>s+t.pnl_points, 0);
         const totInr = closed.reduce((s,t)=>s+t.pnl_rupees, 0);
