@@ -386,12 +386,15 @@ def stocks_page():
 
 @socketio.on("connect_stock")
 def handle_stock_connect(payload):
-    symbol   = payload.get("symbol", STOCK_SYMBOLS[0])
-    interval = payload.get("interval", "15minute")
+    symbol   = (payload or {}).get("symbol", STOCK_SYMBOLS[0])
+    interval = (payload or {}).get("interval", "15minute")
+    print(f"[Stock] connect_stock received: {symbol} {interval}")
     key = f"{symbol}:{interval}"
     if key not in _stock_cache:
         _stock_cache[key] = _build_stock_chart(symbol, interval)
-    emit("stock_historical_data", {"symbol": symbol, "candles": _stock_cache.get(key, [])})
+    candles = _stock_cache.get(key, [])
+    print(f"[Stock] emitting {len(candles)} candles for {symbol}")
+    emit("stock_historical_data", {"symbol": symbol, "candles": candles})
     emit("stock_trade_history",   {"symbol": symbol, "trades": get_stock_trade_history(symbol)})
     # Emit last known live price
     if symbol in _stock_live_prices:
