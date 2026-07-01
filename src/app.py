@@ -322,9 +322,10 @@ def _build_stock_chart(symbol, interval):
     _stock_tokens[symbol] = spot_info["instrument_token"] if spot_info else fut_info["instrument_token"]
 
     days = INTERVAL_DAYS.get(interval, 30)
-    from datetime import datetime as dt, timedelta as td
+    from datetime import datetime as dt, timedelta as td, timezone as tz
+    IST_off = tz(td(hours=5, minutes=30))
     kite_inst = get_kite()
-    to_date   = dt.now()
+    to_date   = dt.now(IST_off).replace(tzinfo=None)
     from_date = to_date - td(days=days)
     try:
         raw = kite_inst.historical_data(chart_token, from_date, to_date, interval)

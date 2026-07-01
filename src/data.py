@@ -1,7 +1,8 @@
 from auth import get_kite
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 NIFTY_TOKEN = 256265  # Nifty 50 index
+IST = timezone(timedelta(hours=5, minutes=30))
 
 def get_historical_data(interval="15minute", days=5):
     """
@@ -9,7 +10,7 @@ def get_historical_data(interval="15minute", days=5):
                        30minute, 60minute, day
     """
     kite = get_kite()
-    to_date = datetime.now()
+    to_date = datetime.now(IST).replace(tzinfo=None)   # Kite expects naive IST datetime
     from_date = to_date - timedelta(days=days)
 
     data = kite.historical_data(
