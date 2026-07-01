@@ -18,6 +18,9 @@ from strike_selector import get_atm_strike
 from option_lookup import get_monthly_option_token
 from telegram_bot import send_signal_alert, send_exit_alert
 from paper_trades import init_db, open_trade, close_open_trade, get_open_trade, get_open_trades, close_trade_by_id, get_trade_history
+from stock_contracts import STOCK_SYMBOLS, get_lot_size
+from stock_lookup import get_stock_future
+from stock_paper_trades import init_stock_db, open_stock_trade, get_open_stock_trades, close_stock_trade_by_id, get_stock_trade_history
 
 load_dotenv()
 API_KEY = os.getenv("KITE_API_KEY")
@@ -201,6 +204,11 @@ def start_ticker():
                         _update_forming(price)
                     elif active_option_token and t["instrument_token"] == active_option_token:
                         socketio.emit("live_option_price", {"price": t["last_price"], "symbol": active_option_symbol}, namespace="/")
+                    else:
+                        for sym, tok in _stock_tokens.items():
+                            if t["instrument_token"] == tok:
+                                _stock_live_prices[sym] = t["last_price"]
+                                socketio.emit("stock_live_price", {"symbol": sym, "price": t["last_price"]}, namespace="/")
 
             def on_connect(ws, response):
                 print("Kite ticker connected!")
@@ -294,10 +302,125 @@ def chart_refresh_loop():
             print(f"Auto-pushed chart refresh ({current_interval}): {len(data)} candles")
 
 
+# ── Stocks page ──────────────────────────────────────────────────────────────
+
+_stock_cache       = {}   # { "ULTRACEMCO:15minute": [...] }
+_active_stock      = {}   # { sid: {"symbol": str, "interval": str} }
+_stock_tokens      = {}   # { symbol: instrument_token }
+_stock_live_prices = {}   # { symbol: last_price }
+_stock_last_signal = {}   # { symbol: candle_time }
+
+def _build_stock_chart(symbol, interval):
+    info = get_stock_future(symbol)
+    if not info:
+        return []
+    token = info["instrument_token"]
+    _stock_tokens[symbol] = token
+
+    days = INTERVAL_DAYS.get(interval, 30)
+    from datetime import datetime as dt, timedelta as td
+    kite_inst = get_kite()
+    to_date   = dt.now()
+    from_date = to_date - td(days=days)
+    try:
+        raw = kite_inst.historical_data(token, from_date, to_date, interval)
+    except Exception as e:
+        print(f"Stock hist data error {symbol}: {e}")
+        return []
+
+    candles = []
+    for c in raw:
+        t = int(c["date"].timestamp())
+        candles.append({"time": t, "open": c["open"], "high": c["high"],
+                        "low": c["low"], "close": c["close"]})
+    candles.sort(key=lambda x: x["time"])
+    if not candles:
+        return []
+
+    df = calculate_supertrend(candles)
+    out = []
+    for _, row in df.iterrows():
+        out.append({
+            "time":       int(row["time"]),
+            "open":       float(row["open"]),
+            "high":       float(row["high"]),
+            "low":        float(row["low"]),
+            "close":      float(row["close"]),
+            "supertrend": None if pd.isna(row["supertrend"]) else float(row["supertrend"]),
+            "direction":  None if pd.isna(row["direction"]) else int(row["direction"]),
+            "signal":     row["signal"] if row["signal"] else None,
+        })
+
+    # Handle signal on latest candle
+    if out:
+        last = out[-1]
+        prev_sig_time = _stock_last_signal.get(symbol)
+        if last["signal"] and last["time"] != prev_sig_time:
+            _stock_last_signal[symbol] = last["time"]
+            side  = last["signal"]
+            price = last["close"]
+            # Close existing open trades for this stock if side reversed
+            for t in get_open_stock_trades(symbol):
+                if t["side"] != side:
+                    close_stock_trade_by_id(t["id"], price, "signal")
+            socketio.emit("stock_trade_history",
+                          {"symbol": symbol, "trades": get_stock_trade_history(symbol)},
+                          namespace="/")
+            # Open new trade
+            open_stock_trade(symbol, side, info["tradingsymbol"], price)
+            socketio.emit("stock_trade_history",
+                          {"symbol": symbol, "trades": get_stock_trade_history(symbol)},
+                          namespace="/")
+            print(f"[Stock] {symbol} {side} signal @ {price}")
+    return out
+
+
+@app.route("/stocks")
+def stocks_page():
+    return render_template("stocks.html", symbols=STOCK_SYMBOLS)
+
+
+@socketio.on("connect_stock")
+def handle_stock_connect(payload):
+    symbol   = payload.get("symbol", STOCK_SYMBOLS[0])
+    interval = payload.get("interval", "15minute")
+    key = f"{symbol}:{interval}"
+    if key not in _stock_cache:
+        _stock_cache[key] = _build_stock_chart(symbol, interval)
+    emit("stock_historical_data", {"symbol": symbol, "candles": _stock_cache.get(key, [])})
+    emit("stock_trade_history",   {"symbol": symbol, "trades": get_stock_trade_history(symbol)})
+    # Emit last known live price
+    if symbol in _stock_live_prices:
+        emit("stock_live_price", {"symbol": symbol, "price": _stock_live_prices[symbol]})
+
+
+@socketio.on("change_stock")
+def handle_change_stock(payload):
+    symbol   = payload.get("symbol", STOCK_SYMBOLS[0])
+    interval = payload.get("interval", "15minute")
+    key = f"{symbol}:{interval}"
+    _stock_cache[key] = _build_stock_chart(symbol, interval)
+    emit("stock_historical_data", {"symbol": symbol, "candles": _stock_cache.get(key, [])})
+    emit("stock_trade_history",   {"symbol": symbol, "trades": get_stock_trade_history(symbol)})
+    if symbol in _stock_live_prices:
+        emit("stock_live_price", {"symbol": symbol, "price": _stock_live_prices[symbol]})
+    # Subscribe live ticker to this stock's future
+    info = get_stock_future(symbol)
+    if info and ws_ref:
+        token = info["instrument_token"]
+        _stock_tokens[symbol] = token
+        try:
+            ws_ref.subscribe([token])
+            ws_ref.set_mode(ws_ref.MODE_FULL, [token])
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
     print("Authenticating with Kite (one-time, before starting server)...")
     get_kite()
     init_db()
+    init_stock_db()
     print("Pre-warming chart cache before accepting connections...")
     refresh_chart_cache(current_interval)
     print("Cache ready. Starting ticker and server...")
