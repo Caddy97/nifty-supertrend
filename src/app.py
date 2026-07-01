@@ -19,7 +19,7 @@ from option_lookup import get_monthly_option_token
 from telegram_bot import send_signal_alert, send_exit_alert
 from paper_trades import init_db, open_trade, close_open_trade, get_open_trade, get_open_trades, close_trade_by_id, get_trade_history
 from stock_contracts import STOCK_SYMBOLS, get_lot_size
-from stock_lookup import get_stock_future
+from stock_lookup import get_stock_future, preload_cache
 from stock_paper_trades import init_stock_db, open_stock_trade, get_open_stock_trades, close_stock_trade_by_id, get_stock_trade_history
 
 load_dotenv()
@@ -421,6 +421,8 @@ if __name__ == "__main__":
     get_kite()
     init_db()
     init_stock_db()
+    print("Pre-loading NFO instruments cache...")
+    preload_cache()
     print("Pre-warming chart cache before accepting connections...")
     refresh_chart_cache(current_interval)
     print("Cache ready. Starting ticker and server...")
