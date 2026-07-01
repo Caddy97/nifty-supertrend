@@ -10,8 +10,9 @@ def get_historical_data(interval="15minute", days=5):
                        30minute, 60minute, day
     """
     kite = get_kite()
-    to_date = datetime.now(IST).replace(tzinfo=None)   # Kite expects naive IST datetime
-    from_date = to_date - timedelta(days=days)
+    now_ist   = datetime.now(IST).replace(tzinfo=None)
+    to_date   = now_ist.replace(hour=23, minute=59, second=59)  # end of today IST
+    from_date = now_ist - timedelta(days=days)
 
     data = kite.historical_data(
         instrument_token=NIFTY_TOKEN,

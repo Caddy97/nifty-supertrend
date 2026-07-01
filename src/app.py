@@ -323,10 +323,11 @@ def _build_stock_chart(symbol, interval):
 
     days = INTERVAL_DAYS.get(interval, 30)
     from datetime import datetime as dt, timedelta as td, timezone as tz
-    IST_off = tz(td(hours=5, minutes=30))
+    IST_off  = tz(td(hours=5, minutes=30))
     kite_inst = get_kite()
-    to_date   = dt.now(IST_off).replace(tzinfo=None)
-    from_date = to_date - td(days=days)
+    now_ist   = dt.now(IST_off).replace(tzinfo=None)
+    to_date   = now_ist.replace(hour=23, minute=59, second=59)
+    from_date = now_ist - td(days=days)
     try:
         raw = kite_inst.historical_data(chart_token, from_date, to_date, interval)
     except Exception as e:
