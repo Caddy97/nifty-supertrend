@@ -45,9 +45,9 @@ def login_required(f):
 current_interval = "15minute"
 
 INTERVAL_DAYS = {
-    "5minute": 15,
-    "15minute": 30,
-    "60minute": 90,
+    "5minute": 60,
+    "15minute": 100,
+    "60minute": 365,
 }
 
 INTERVAL_NAME_MAP = {"5minute": "5m", "15minute": "15m", "60minute": "1h"}
