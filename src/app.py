@@ -19,7 +19,7 @@ from option_lookup import get_monthly_option_token
 from telegram_bot import send_signal_alert, send_exit_alert
 from paper_trades import init_db, open_trade, close_open_trade, get_open_trade, get_open_trades, close_trade_by_id, get_trade_history
 from stock_contracts import STOCK_SYMBOLS, get_lot_size
-from stock_lookup import get_stock_future, preload_cache
+from stock_lookup import get_stock_future, get_stock_spot, preload_cache
 from stock_paper_trades import init_stock_db, open_stock_trade, get_open_stock_trades, close_stock_trade_by_id, get_stock_trade_history
 
 load_dotenv()
@@ -311,11 +311,15 @@ _stock_live_prices = {}   # { symbol: last_price }
 _stock_last_signal = {}   # { symbol: candle_time }
 
 def _build_stock_chart(symbol, interval):
-    info = get_stock_future(symbol)
-    if not info:
+    fut_info  = get_stock_future(symbol)
+    spot_info = get_stock_spot(symbol)
+    if not fut_info:
+        print(f"[Stock] No futures info for {symbol}")
         return []
-    token = info["instrument_token"]
-    _stock_tokens[symbol] = token
+
+    # Use spot token for chart/supertrend; fall back to futures if spot unavailable
+    chart_token = spot_info["instrument_token"] if spot_info else fut_info["instrument_token"]
+    _stock_tokens[symbol] = spot_info["instrument_token"] if spot_info else fut_info["instrument_token"]
 
     days = INTERVAL_DAYS.get(interval, 30)
     from datetime import datetime as dt, timedelta as td
@@ -323,7 +327,7 @@ def _build_stock_chart(symbol, interval):
     to_date   = dt.now()
     from_date = to_date - td(days=days)
     try:
-        raw = kite_inst.historical_data(token, from_date, to_date, interval)
+        raw = kite_inst.historical_data(chart_token, from_date, to_date, interval)
     except Exception as e:
         print(f"Stock hist data error {symbol}: {e}")
         return []
@@ -404,10 +408,10 @@ def handle_change_stock(payload):
     emit("stock_trade_history",   {"symbol": symbol, "trades": get_stock_trade_history(symbol)})
     if symbol in _stock_live_prices:
         emit("stock_live_price", {"symbol": symbol, "price": _stock_live_prices[symbol]})
-    # Subscribe live ticker to this stock's future
-    info = get_stock_future(symbol)
-    if info and ws_ref:
-        token = info["instrument_token"]
+    # Subscribe live ticker to spot price
+    spot = get_stock_spot(symbol)
+    if spot and ws_ref:
+        token = spot["instrument_token"]
         _stock_tokens[symbol] = token
         try:
             ws_ref.subscribe([token])

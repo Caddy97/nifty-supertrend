@@ -2,20 +2,21 @@ from auth import get_kite
 import pandas as pd
 from datetime import datetime, date
 
-_nfo_cache = {}   # { symbol: {instrument_token, tradingsymbol, expiry, lot_size} }
+_nfo_cache  = {}   # { symbol: {instrument_token, tradingsymbol, expiry, lot_size} }
+_nse_cache  = {}   # { symbol: {instrument_token, tradingsymbol} }
 _cache_date = None
 
 
 def _refresh_cache():
-    global _nfo_cache, _cache_date
+    global _nfo_cache, _nse_cache, _cache_date
     kite = get_kite()
-    instruments = kite.instruments("NFO")
-    df = pd.DataFrame(instruments)
-    df["expiry"] = pd.to_datetime(df["expiry"])
-    today = pd.Timestamp(datetime.now().date())
-    futs = df[df["instrument_type"] == "FUT"].copy()
-    upcoming = futs[futs["expiry"] >= today].sort_values("expiry")
 
+    # NFO futures
+    nfo = pd.DataFrame(kite.instruments("NFO"))
+    nfo["expiry"] = pd.to_datetime(nfo["expiry"])
+    today = pd.Timestamp(datetime.now().date())
+    futs = nfo[nfo["instrument_type"] == "FUT"].copy()
+    upcoming = futs[futs["expiry"] >= today].sort_values("expiry")
     _nfo_cache = {}
     for sym, grp in upcoming.groupby("name"):
         row = grp.iloc[0]
@@ -25,12 +26,23 @@ def _refresh_cache():
             "expiry":           str(row["expiry"].date()),
             "lot_size":         int(row["lot_size"]),
         }
+
+    # NSE spot (EQ)
+    nse = pd.DataFrame(kite.instruments("NSE"))
+    eq  = nse[nse["instrument_type"] == "EQ"].copy()
+    _nse_cache = {}
+    for _, row in eq.iterrows():
+        _nse_cache[row["tradingsymbol"]] = {
+            "instrument_token": int(row["instrument_token"]),
+            "tradingsymbol":    row["tradingsymbol"],
+        }
+
     _cache_date = date.today()
-    print(f"[StockLookup] NFO cache refreshed — {len(_nfo_cache)} futures loaded")
+    print(f"[StockLookup] Cache refreshed — {len(_nfo_cache)} futures, {len(_nse_cache)} NSE EQ")
 
 
 def get_stock_future(symbol):
-    """Return nearest unexpired monthly future token for a stock (cached per day)."""
+    """Return nearest unexpired monthly future for a stock (cached per day)."""
     global _cache_date
     if _cache_date != date.today() or symbol not in _nfo_cache:
         try:
@@ -39,6 +51,18 @@ def get_stock_future(symbol):
             print(f"[StockLookup] Cache refresh failed: {e}")
             return None
     return _nfo_cache.get(symbol)
+
+
+def get_stock_spot(symbol):
+    """Return NSE spot (EQ) instrument token for a stock (cached per day)."""
+    global _cache_date
+    if _cache_date != date.today() or not _nse_cache:
+        try:
+            _refresh_cache()
+        except Exception as e:
+            print(f"[StockLookup] Cache refresh failed: {e}")
+            return None
+    return _nse_cache.get(symbol)
 
 
 def preload_cache():
@@ -52,4 +76,5 @@ def preload_cache():
 if __name__ == "__main__":
     preload_cache()
     for sym in ["ULTRACEMCO", "AMBER", "DIXON", "BAJFINANCE"]:
-        print(sym, get_stock_future(sym))
+        print("FUT:", get_stock_future(sym))
+        print("SPOT:", get_stock_spot(sym))
