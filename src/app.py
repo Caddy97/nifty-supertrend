@@ -425,6 +425,26 @@ def handle_change_stock(payload):
             pass
 
 
+def restore_active_option():
+    """On startup restore the active option token from any open OPT trade."""
+    import re
+    try:
+        opt_trades = [t for t in get_open_trades() if t.get("trade_type") == "OPT"]
+        if not opt_trades:
+            return
+        sym = opt_trades[0]["symbol"]
+        m = re.match(r'NIFTY\d+[A-Z]+(\d+)(CE|PE)$', sym)
+        if m:
+            strike   = int(m.group(1))
+            opt_type = m.group(2)
+            info = get_monthly_option_token(strike, opt_type)
+            if info:
+                set_active_option(info["instrument_token"], sym)
+                print(f"[Startup] Restored active option: {sym} token={info['instrument_token']}")
+    except Exception as e:
+        print(f"[Startup] Could not restore active option: {e}")
+
+
 if __name__ == "__main__":
     print("Authenticating with Kite (one-time, before starting server)...")
     get_kite()
@@ -432,6 +452,7 @@ if __name__ == "__main__":
     init_stock_db()
     print("Pre-loading NFO instruments cache...")
     preload_cache()
+    restore_active_option()
     print("Pre-warming chart cache before accepting connections...")
     refresh_chart_cache(current_interval)
     print("Cache ready. Starting ticker and server...")
