@@ -122,13 +122,18 @@ def build_chart_data(interval):
                         print(f"Quote failed for {tradingsymbol}: {ex}")
                         return None
 
-                # Close all existing open trades if signal reversed
+                # Close all existing open trades if signal reversed.
+                # OPT trades are always stored with side="BUY" (you always buy an
+                # option, whether CE or PE) - the true directional side is encoded
+                # in opt_type, not side, so derive it before comparing.
                 for existing in get_open_trades():
-                    if existing["side"] != side:
-                        if existing.get("trade_type") == "FUT":
-                            exit_price = spot
-                        else:
-                            exit_price = get_live_price(existing["symbol"]) or existing["entry_premium"]
+                    if existing.get("trade_type") == "FUT":
+                        existing_side = existing["side"]
+                        exit_price = spot
+                    else:
+                        existing_side = "BUY" if existing.get("opt_type") == "CE" else "SELL"
+                        exit_price = get_live_price(existing["symbol"]) or existing["entry_premium"]
+                    if existing_side != side:
                         result = close_trade_by_id(existing["id"], spot, exit_price, "signal")
                         if result:
                             send_exit_alert(existing["side"], spot, existing["symbol"],
