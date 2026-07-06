@@ -439,8 +439,8 @@
 
         const markers = [];
         data.forEach(d => {
-            if (d.signal === "BUY")  markers.push({ time: d.time, position: "belowBar", color: "#26a69a", shape: "arrowUp",   text: "B" });
-            if (d.signal === "SELL") markers.push({ time: d.time, position: "aboveBar", color: "#ef5350", shape: "arrowDown", text: "S" });
+            if (d.signal === "BUY")  markers.push({ time: d.time, position: "belowBar", color: "#26a69a", shape: "arrowUp",   text: "Buy" });
+            if (d.signal === "SELL") markers.push({ time: d.time, position: "aboveBar", color: "#ef5350", shape: "arrowDown", text: "Sell" });
         });
         candles.setMarkers(markers);
 
