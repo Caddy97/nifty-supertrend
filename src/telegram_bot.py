@@ -7,24 +7,27 @@ from pathlib import Path
 load_dotenv(dotenv_path=Path(__file__).resolve().parent.parent / ".env")
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# Comma-separated list of chat/group IDs - e.g. "821614163,-1001234567890"
+CHAT_IDS = [c.strip() for c in os.getenv("TELEGRAM_CHAT_ID", "").split(",") if c.strip()]
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
 
 def send_message(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    try:
-        resp = requests.post(
-            url,
-            json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"},
-            timeout=5,
-        )
-        resp.raise_for_status()
-        return True
-    except Exception as e:
-        print(f"Telegram send failed: {e}")
-        return False
+    ok = True
+    for chat_id in CHAT_IDS:
+        try:
+            resp = requests.post(
+                url,
+                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+                timeout=5,
+            )
+            resp.raise_for_status()
+        except Exception as e:
+            print(f"Telegram send failed for chat_id={chat_id}: {e}")
+            ok = False
+    return ok
 
 
 def send_signal_alert(side, spot, strike, opt_type, symbol, premium):

@@ -16,7 +16,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=BASE_DIR / ".env")
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = str(os.getenv("TELEGRAM_CHAT_ID", ""))
+# TELEGRAM_CHAT_ID may now be a comma-separated list (personal + friends' group)
+# for signal broadcasts, but login/admin commands must stay restricted to the
+# owner - always the first ID in that list.
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").split(",")[0].strip()
 API_KEY = os.getenv("KITE_API_KEY")
 API_SECRET = os.getenv("KITE_API_SECRET")
 TOKEN_FILE = BASE_DIR / "access_token.txt"
