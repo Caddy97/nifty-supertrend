@@ -9,3 +9,6 @@ venv/
 access_token.txt
 trades.json
 nohup.out
+data/ticks/
+gcs-service-account*.json
+*-service-account.json

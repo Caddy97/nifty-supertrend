@@ -21,6 +21,7 @@ from paper_trades import init_db, open_trade, close_open_trade, get_open_trade, 
 from stock_contracts import STOCK_SYMBOLS, get_lot_size
 from stock_lookup import get_stock_future, get_stock_spot, preload_cache
 from stock_paper_trades import init_stock_db, open_stock_trade, get_open_stock_trades, close_stock_trade_by_id, get_stock_trade_history
+import tick_store
 
 load_dotenv()
 API_KEY = os.getenv("KITE_API_KEY")
@@ -221,6 +222,7 @@ def start_ticker():
 
             def on_ticks(ws, ticks):
                 for t in ticks:
+                    tick_store.record_tick(t)
                     if t["instrument_token"] == NIFTY_TOKEN:
                         price = t["last_price"]
                         socketio.emit("live_price", {"price": price}, namespace="/")
@@ -489,5 +491,7 @@ if __name__ == "__main__":
     refresh_thread = threading.Thread(target=chart_refresh_loop)
     refresh_thread.daemon = True
     refresh_thread.start()
+
+    tick_store.start_flush_thread()
 
     socketio.run(app, debug=False, host="0.0.0.0", port=5001, allow_unsafe_werkzeug=True)

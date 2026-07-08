@@ -12,3 +12,4 @@ scipy
 openpyxl
 python-docx
 simple-websocket
+google-cloud-storage
