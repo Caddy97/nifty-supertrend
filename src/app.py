@@ -452,7 +452,9 @@ def restore_active_option():
         opt_trades = [t for t in get_open_trades() if t.get("trade_type") == "OPT"]
         if not opt_trades:
             return
-        sym = opt_trades[0]["symbol"]
+        # No ORDER BY on the underlying query - pick the most recently opened
+        # one explicitly, not whatever SQLite happens to return first.
+        sym = max(opt_trades, key=lambda t: t["id"])["symbol"]
         m = re.match(r'NIFTY\d+[A-Z]+(\d+)(CE|PE)$', sym)
         if m:
             strike   = int(m.group(1))
