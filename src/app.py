@@ -282,7 +282,11 @@ def refresh_chart_cache(interval):
 @socketio.on("connect")
 def handle_connect(auth=None):
     print("Client connected!")
-    refresh_chart_cache(current_interval)
+    # Serve the already-warm cache instantly - it's kept fresh by the startup
+    # pre-warm and the periodic chart_refresh_loop, so there's no need to
+    # block every single page load/reconnect on a fresh Kite API fetch.
+    if current_interval not in _chart_cache:
+        refresh_chart_cache(current_interval)
     emit("historical_data", _chart_cache.get(current_interval, []))
     emit("trade_history", get_trade_history())
     # Emit last known option price on connect (shows closing price after hours)
@@ -304,8 +308,9 @@ def handle_interval(payload):
     global current_interval
     current_interval = payload["interval"]
     print(f"Interval changed to {current_interval}")
-    data = build_chart_data(current_interval)
-    emit("historical_data", data)
+    if current_interval not in _chart_cache:
+        refresh_chart_cache(current_interval)
+    emit("historical_data", _chart_cache.get(current_interval, []))
 
 def chart_refresh_loop():
     """Wakes up at each candle boundary for the current interval and pushes fresh data to all clients."""
