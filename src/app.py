@@ -106,8 +106,6 @@ def build_chart_data(interval):
             opt_type = "CE" if side == "BUY" else "PE"
             info = get_monthly_option_token(strike, opt_type)
             last_acted_signal["time"] = latest_sig["time"]
-            if info:
-                set_active_option(info["instrument_token"], info["tradingsymbol"])
             print(f"New {side} signal @ {spot}")
             try:
                 kite_inst = get_kite()
@@ -158,6 +156,11 @@ def build_chart_data(interval):
                     opt_premium = get_live_price(info["tradingsymbol"])
                     if opt_premium:
                         open_trade("BUY", opt_type, strike, info["tradingsymbol"], spot, opt_premium, trade_type="OPT")
+                        # Only swap the live ticker's option subscription when we
+                        # actually open a new position - not on every detected signal,
+                        # which would otherwise re-subscribe to a drifting ATM strike
+                        # even while an existing matching position stays open untouched.
+                        set_active_option(info["instrument_token"], info["tradingsymbol"])
                     else:
                         print(f"Live quote unavailable for {info['tradingsymbol']}, skipping OPT trade")
 
