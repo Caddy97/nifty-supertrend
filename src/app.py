@@ -289,10 +289,16 @@ def handle_connect(auth=None):
         refresh_chart_cache(current_interval)
     emit("historical_data", _chart_cache.get(current_interval, []))
     emit("trade_history", get_trade_history())
-    # Emit last known option price on connect (shows closing price after hours)
+    # Emit last known option price on connect (shows closing price after hours).
+    # Only bother with this synchronous Kite API call when the market's closed -
+    # during live hours the ticker already pushes a fresh live_option_price
+    # within a second or two of connecting, making this redundant blocking work.
     try:
-        opt_trades = [t for t in get_open_trades() if t.get("trade_type") == "OPT"]
-        sym = active_option_symbol or (opt_trades[0]["symbol"] if opt_trades else None)
+        if not is_market_open():
+            opt_trades = [t for t in get_open_trades() if t.get("trade_type") == "OPT"]
+            sym = active_option_symbol or (opt_trades[0]["symbol"] if opt_trades else None)
+        else:
+            sym = None
         if sym:
             kite_inst = get_kite()
             key = f"NFO:{sym}"
