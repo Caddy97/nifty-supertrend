@@ -26,6 +26,7 @@ import tick_store
 load_dotenv()
 API_KEY = os.getenv("KITE_API_KEY")
 NIFTY_TOKEN = 256265
+tick_store.register_symbol(NIFTY_TOKEN, "NIFTY50")
 
 DASHBOARD_USER = os.getenv("DASHBOARD_USER", "vishal")
 DASHBOARD_PASS = os.getenv("DASHBOARD_PASS", "nifty2026")
@@ -191,6 +192,8 @@ def set_active_option(token, symbol):
             pass
     active_option_token = token
     active_option_symbol = symbol
+    if token and symbol:
+        tick_store.register_symbol(token, symbol)
     if ws_ref and token:
         ws_ref.subscribe([token])
         ws_ref.set_mode(ws_ref.MODE_FULL, [token])
@@ -355,7 +358,8 @@ def _build_stock_chart(symbol, interval):
 
     # Use spot token for chart/supertrend; fall back to futures if spot unavailable
     chart_token = spot_info["instrument_token"] if spot_info else fut_info["instrument_token"]
-    _stock_tokens[symbol] = spot_info["instrument_token"] if spot_info else fut_info["instrument_token"]
+    _stock_tokens[symbol] = chart_token
+    tick_store.register_symbol(chart_token, symbol)
 
     days = INTERVAL_DAYS.get(interval, 30)
     from datetime import datetime as dt, timedelta as td, timezone as tz
@@ -454,6 +458,7 @@ def handle_change_stock(payload):
     if spot and ws_ref:
         token = spot["instrument_token"]
         _stock_tokens[symbol] = token
+        tick_store.register_symbol(token, symbol)
         try:
             ws_ref.subscribe([token])
             ws_ref.set_mode(ws_ref.MODE_FULL, [token])

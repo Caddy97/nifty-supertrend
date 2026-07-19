@@ -1,4 +1,4 @@
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -25,8 +25,19 @@ NSE_HOLIDAYS_2026 = {
 MARKET_OPEN = time(9, 15)
 MARKET_CLOSE = time(15, 30)
 
+# How long after MARKET_CLOSE to wait before running end-of-day jobs (tick
+# conversion, etc.) - ticks have been observed trickling in past the nominal
+# close, so this buffer avoids racing a still-active writer.
+EOD_BUFFER_MINUTES = 15
+
 def now_ist():
     return datetime.now(IST)
+
+def eod_trigger_time():
+    """Time of day (IST) at which end-of-day jobs should run: MARKET_CLOSE + EOD_BUFFER_MINUTES."""
+    base = datetime(2000, 1, 1, MARKET_CLOSE.hour, MARKET_CLOSE.minute)
+    trigger = base + timedelta(minutes=EOD_BUFFER_MINUTES)
+    return trigger.time()
 
 def is_holiday(dt=None):
     dt = dt or now_ist()

@@ -10,5 +10,8 @@ access_token.txt
 trades.json
 nohup.out
 data/ticks/
+data/live/
+data/archive/
+data/options_chain/
 gcs-service-account*.json
 *-service-account.json
