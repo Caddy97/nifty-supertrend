@@ -12,10 +12,11 @@ from dotenv import load_dotenv
 from auth import get_kite
 from data import get_historical_data
 from supertrend import calculate_supertrend
+from it_ib import detect_it_ib
 from candle_reader import read_candles
 from market_calendar import is_market_open, market_status
 from strike_selector import get_atm_strike
-from option_lookup import get_monthly_option_token
+from option_lookup import get_monthly_option_token, get_weekly_option_token
 from telegram_bot import send_signal_alert, send_exit_alert
 from paper_trades import init_db, open_trade, close_open_trade, get_open_trade, get_open_trades, close_trade_by_id, get_trade_history
 from stock_contracts import STOCK_SYMBOLS, get_lot_size
@@ -173,6 +174,7 @@ def build_chart_data(interval):
             except Exception as e:
                 print(f"Paper trade / Telegram error: {e}")
 
+    detect_it_ib(out)  # additive: adds pivot/pivot_price/provisional/it_line/ib_line/squeeze keys only
     return out
 
 active_option_token = None
@@ -334,6 +336,11 @@ def chart_refresh_loop():
         if not is_market_open():
             continue
 
+        try:
+            check_expiry_rollover()
+        except Exception as e:
+            print(f"[Rollover] Periodic check failed: {e}")
+
         refresh_chart_cache(current_interval)
         data = _chart_cache.get(current_interval, [])
         if data:
@@ -488,6 +495,82 @@ def restore_active_option():
         print(f"[Startup] Could not restore active option: {e}")
 
 
+def _quote_or_confirmed_gone(kite_inst, tradingsymbol):
+    """Returns (price, confirmed_gone). confirmed_gone is only True when the
+    quote call itself succeeded but Kite's response simply doesn't contain
+    this instrument at all - the reliable signal that a contract has expired
+    and been delisted. Any other failure (auth, network, transient) returns
+    confirmed_gone=False, so an outage never gets mistaken for expiry."""
+    key = f"NFO:{tradingsymbol}"
+    try:
+        q = kite_inst.quote([key])
+    except Exception as ex:
+        print(f"[Rollover] Quote API call failed for {tradingsymbol}: {ex}")
+        return None, False
+    if key not in q:
+        return None, True
+    price = q[key]["last_price"]
+    return (price if price and price > 0 else None), False
+
+
+def check_expiry_rollover():
+    """Positions only ever close on a supertrend signal reversal (see the
+    signal-flip block in build_chart_data) - if the signal never flips, a
+    position can sit open past its own contract's expiry and go dead
+    forever. This detects that specific, unambiguous case - a live quote
+    that Kite no longer recognizes at all - and force-rolls the position
+    into the nearest weekly contract on the same side, instead of leaving
+    it stuck. The paired synthetic FUT leg (which never has a real expiry
+    of its own) is rolled alongside it purely to reset its entry
+    bookkeeping - closing and reopening at the same spot has zero P&L
+    impact on its own."""
+    opt_trades = [t for t in get_open_trades() if t.get("trade_type") == "OPT"]
+    if not opt_trades:
+        return
+
+    kite_inst = get_kite()
+
+    for t in opt_trades:
+        _, confirmed_gone = _quote_or_confirmed_gone(kite_inst, t["symbol"])
+        if not confirmed_gone:
+            continue  # still tradable, or an unrelated API failure - leave it alone
+
+        side = "BUY" if t["opt_type"] == "CE" else "SELL"
+        try:
+            spot = kite_inst.ltp(["NSE:NIFTY 50"])["NSE:NIFTY 50"]["last_price"]
+        except Exception as e:
+            print(f"[Rollover] Could not fetch spot, will retry next cycle: {e}")
+            continue
+
+        exit_price = t["entry_premium"]  # contract's gone - no real closing price available
+        result = close_trade_by_id(t["id"], spot, exit_price, "expired_rollover")
+        if result:
+            send_exit_alert(t["side"], spot, t["symbol"], t["entry_premium"], exit_price)
+        print(f"[Rollover] {t['symbol']} no longer tradable (expired, no exit signal ever fired) - rolling to nearest weekly")
+
+        for fut in get_open_trades():
+            if fut.get("trade_type") == "FUT" and fut["side"] == side:
+                close_trade_by_id(fut["id"], spot, spot, "expired_rollover")
+                open_trade(side, "FUT", 0, "NIFTY-FUT", spot, spot, trade_type="FUT")
+
+        strike = get_atm_strike(spot)
+        info = get_weekly_option_token(strike, t["opt_type"])
+        if not info:
+            print(f"[Rollover] No weekly contract found for {strike}{t['opt_type']}, could not reopen")
+            socketio.emit("trade_history", get_trade_history(), namespace="/")
+            continue
+
+        new_price, _ = _quote_or_confirmed_gone(kite_inst, info["tradingsymbol"])
+        if new_price:
+            open_trade("BUY", t["opt_type"], strike, info["tradingsymbol"], spot, new_price, trade_type="OPT")
+            set_active_option(info["instrument_token"], info["tradingsymbol"])
+            send_signal_alert(side, spot, strike, t["opt_type"], info["tradingsymbol"], new_price)
+        else:
+            print(f"[Rollover] Live quote unavailable for {info['tradingsymbol']}, could not reopen yet - will retry next cycle")
+
+        socketio.emit("trade_history", get_trade_history(), namespace="/")
+
+
 if __name__ == "__main__":
     print("Authenticating with Kite (one-time, before starting server)...")
     get_kite()
@@ -496,6 +579,10 @@ if __name__ == "__main__":
     print("Pre-loading NFO instruments cache...")
     preload_cache()
     restore_active_option()
+    try:
+        check_expiry_rollover()
+    except Exception as e:
+        print(f"[Rollover] Startup check failed: {e}")
     print("Pre-warming chart cache before accepting connections...")
     refresh_chart_cache(current_interval)
     print("Cache ready. Starting ticker and server...")
