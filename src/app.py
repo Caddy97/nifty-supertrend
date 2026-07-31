@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 from auth import get_kite
 from data import get_historical_data
 from supertrend import calculate_supertrend
-from it_ib import detect_it_ib
 from candle_reader import read_candles
 from market_calendar import is_market_open, market_status
 from strike_selector import get_atm_strike
@@ -174,7 +173,6 @@ def build_chart_data(interval):
             except Exception as e:
                 print(f"Paper trade / Telegram error: {e}")
 
-    detect_it_ib(out)  # additive: adds pivot/pivot_price/provisional/it_line/ib_line/squeeze keys only
     return out
 
 active_option_token = None
