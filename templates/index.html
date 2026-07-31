@@ -553,12 +553,15 @@
     function renderOrders(trades) {
         set("orders-cnt", trades.length);
         if (!trades.length) { set("orders-body", '<tr><td colspan="11" class="empty">No trades yet</td></tr>'); return; }
-        set("orders-body", trades.map(t => {
+        set("orders-body", trades.map((t, i) => {
             const isOpen = t.status === "OPEN";
             const sc = t.side === "BUY" ? "up bold" : "dn bold";
             const pc = !isOpen && t.pnl_points != null ? col(t.pnl_points) + " bold" : "muted";
+            // trades is newest-first (ORDER BY id DESC) - number ascending from the
+            // oldest trade, independent of the underlying DB id (which can have gaps
+            // from long-past manual edits) so the count always runs 1..N with no gaps.
             return `<tr>
-                <td class="muted">${t.id}</td>
+                <td class="muted">${trades.length - i}</td>
                 <td class="muted">${t.entry_time}</td>
                 <td class="${sc}">${t.side}</td>
                 <td>${t.symbol} ${t.trade_type === "FUT" ? '<span style="color:var(--gold);font-size:10px;margin-left:4px">FUT</span>' : '<span style="color:var(--blue);font-size:10px;margin-left:4px">OPT</span>'}</td>
