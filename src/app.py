@@ -15,7 +15,7 @@ from supertrend import calculate_supertrend
 from candle_reader import read_candles
 from market_calendar import is_market_open, market_status
 from strike_selector import get_atm_strike
-from option_lookup import get_monthly_option_token, get_weekly_option_token
+from option_lookup import get_monthly_option_token, get_weekly_option_token, get_token_for_symbol
 from telegram_bot import send_signal_alert, send_exit_alert
 from paper_trades import init_db, open_trade, close_open_trade, get_open_trade, get_open_trades, close_trade_by_id, get_trade_history
 from stock_contracts import STOCK_SYMBOLS, get_lot_size
@@ -473,7 +473,6 @@ def handle_change_stock(payload):
 
 def restore_active_option():
     """On startup restore the active option token from any open OPT trade."""
-    import re
     try:
         opt_trades = [t for t in get_open_trades() if t.get("trade_type") == "OPT"]
         if not opt_trades:
@@ -481,14 +480,14 @@ def restore_active_option():
         # No ORDER BY on the underlying query - pick the most recently opened
         # one explicitly, not whatever SQLite happens to return first.
         sym = max(opt_trades, key=lambda t: t["id"])["symbol"]
-        m = re.match(r'NIFTY\d+[A-Z]+(\d+)(CE|PE)$', sym)
-        if m:
-            strike   = int(m.group(1))
-            opt_type = m.group(2)
-            info = get_monthly_option_token(strike, opt_type)
-            if info:
-                set_active_option(info["instrument_token"], sym)
-                print(f"[Startup] Restored active option: {sym} token={info['instrument_token']}")
+        # Look up the exact symbol directly - works for both monthly and
+        # weekly tradingsymbol formats, unlike parsing strike out of the
+        # string and re-deriving via get_monthly_option_token (which always
+        # picks a monthly contract, wrong for a weekly-rolled position).
+        info = get_token_for_symbol(sym)
+        if info:
+            set_active_option(info["instrument_token"], sym)
+            print(f"[Startup] Restored active option: {sym} token={info['instrument_token']}")
     except Exception as e:
         print(f"[Startup] Could not restore active option: {e}")
 

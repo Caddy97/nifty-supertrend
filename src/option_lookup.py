@@ -57,6 +57,18 @@ def get_weekly_option_token(strike, option_type):
         return None
     return _to_result(future.iloc[0], strike, option_type)
 
+def get_token_for_symbol(tradingsymbol):
+    """Looks up an exact NFO tradingsymbol directly (works for both monthly
+    and weekly formats, unlike parsing strike/expiry out of the symbol
+    string). Returns None if Kite doesn't currently list it (e.g. expired)."""
+    kite = get_kite()
+    df = pd.DataFrame(kite.instruments())
+    match = df[df["tradingsymbol"] == tradingsymbol]
+    if match.empty:
+        return None
+    row = match.iloc[0]
+    return {"instrument_token": int(row["instrument_token"]), "tradingsymbol": tradingsymbol}
+
 if __name__ == "__main__":
     result = get_monthly_option_token(24000, "CE")
     print(result)
