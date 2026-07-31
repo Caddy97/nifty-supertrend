@@ -93,11 +93,14 @@ def close_open_trade(exit_spot, exit_premium, exit_reason):
     return close_trade_by_id(trade["id"], exit_spot, exit_premium, exit_reason)
 
 
-def get_trade_history(limit=30):
+def get_trade_history(limit=None):
     with _conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM trades ORDER BY id DESC LIMIT ?", (limit,)
-        ).fetchall()
+        if limit is None:
+            rows = conn.execute("SELECT * FROM trades ORDER BY id DESC").fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM trades ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
     return [dict(r) for r in rows]
 
 
