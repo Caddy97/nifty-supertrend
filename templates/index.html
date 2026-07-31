@@ -259,13 +259,13 @@
             <div class="pane" id="pane-orders">
                 <table>
                     <thead><tr>
-                        <th>Entry Time</th><th>Side</th><th>Symbol</th>
+                        <th>#</th><th>Entry Time</th><th>Side</th><th>Symbol</th>
                         <th>Entry Spot</th><th>Entry Prem</th><th>Exit Prem</th>
                         <th>Exit Time</th><th>Reason</th>
                         <th>P&amp;L (pts)</th><th>P&amp;L (&#8377;)</th>
                     </tr></thead>
                     <tbody id="orders-body">
-                        <tr><td colspan="10" class="empty">No trades yet</td></tr>
+                        <tr><td colspan="11" class="empty">No trades yet</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -552,12 +552,13 @@
     // ── Orders ──
     function renderOrders(trades) {
         set("orders-cnt", trades.length);
-        if (!trades.length) { set("orders-body", '<tr><td colspan="10" class="empty">No trades yet</td></tr>'); return; }
+        if (!trades.length) { set("orders-body", '<tr><td colspan="11" class="empty">No trades yet</td></tr>'); return; }
         set("orders-body", trades.map(t => {
             const isOpen = t.status === "OPEN";
             const sc = t.side === "BUY" ? "up bold" : "dn bold";
             const pc = !isOpen && t.pnl_points != null ? col(t.pnl_points) + " bold" : "muted";
             return `<tr>
+                <td class="muted">${t.id}</td>
                 <td class="muted">${t.entry_time}</td>
                 <td class="${sc}">${t.side}</td>
                 <td>${t.symbol} ${t.trade_type === "FUT" ? '<span style="color:var(--gold);font-size:10px;margin-left:4px">FUT</span>' : '<span style="color:var(--blue);font-size:10px;margin-left:4px">OPT</span>'}</td>
